@@ -18,8 +18,9 @@ const MIGRATIONS_DIR = join(__dirname, '..', 'db', 'migrations');
 async function main() {
   const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
   if (!url) {
-    console.error('Set DATABASE_URL_UNPOOLED (or DATABASE_URL) to run migrations.');
-    process.exit(1);
+    // No database configured (e.g. demo mode) — skip migrations without failing the build.
+    console.log('No DATABASE_URL set — skipping migrations (demo mode).');
+    return;
   }
 
   const client = new Client({ connectionString: url });
