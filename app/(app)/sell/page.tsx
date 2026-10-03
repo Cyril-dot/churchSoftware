@@ -1,0 +1,1014 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence, useReducedMotion, animate } from 'motion/react';
+import { Toaster, toast } from 'sonner';
+import Icon from '@/components/Icon';
+import { formatMoney, parseMoney } from '@/lib/money';
+
+/* ═══════════════════════ Types ═══════════════════════ */
+
+interface ApiProduct {
+  id: string;
+  name: string;
+  author_or_brand?: string | null;
+  selling_price: number;
+  quantity_on_hand: number;
+  sku?: string | null;
+}
+
+interface CartLine {
+  productId: string;
+  name: string;
+  unitPrice: number;
+  quantity: number;
+  stock: number;
+}
+
+interface ReceiptItem {
+  name: string;
+  quantity: number;
+  unit_price: number;
+}
+
+interface SaleReceipt {
+  id: string;
+  receipt_number: string;
+  sold_at: string;
+  cashier_name: string;
+  items: ReceiptItem[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  amount_tendered: number | null;
+  payment_method: string;
+  payment_reference: string | null;
+}
+
+type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'bank_transfer';
+type DiscountMode = 'amount' | 'percent';
+
+const PAYMENT_METHODS: { value: PaymentMethod; label: string; icon: string }[] = [
+  { value: 'cash', label: 'Cash', icon: 'payments' },
+  { value: 'card', label: 'Card', icon: 'credit_card' },
+  { value: 'mobile_money', label: 'MoMo', icon: 'smartphone' },
+  { value: 'bank_transfer', label: 'Bank', icon: 'account_balance' },
+];
+
+const PAYMENT_LABELS: Record<PaymentMethod, string> = {
+  cash: 'Cash',
+  card: 'Card',
+  mobile_money: 'Mobile Money',
+  bank_transfer: 'Bank Transfer',
+};
+
+const CART_KEY = 'bookshop.pos.cart.v1';
+const LOW_STOCK_AT = 5;
+const QUICK_CASH = [10, 20, 50, 100];
+
+/* ═══════════════════════ Helpers ═══════════════════════ */
+
+function loadCart(): CartLine[] {
+  try {
+    const raw = localStorage.getItem(CART_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function apiGetProducts(search: string, signal: AbortSignal): Promise<ApiProduct[]> {
+  const params = new URLSearchParams({ limit: '50' });
+  if (search.trim()) params.set('search', search.trim());
+  const res = await fetch(`/api/v1/products?${params}`, { signal });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.error?.message ?? `Search failed (${res.status})`);
+  }
+  const body = await res.json();
+  return body?.data?.items ?? [];
+}
+
+/* ═══════════════════════ Small components ═══════════════════════ */
+
+function Stepper({ value, onChange, max }: { value: number; onChange: (v: number) => void; max: number }) {
+  return (
+    <div className="flex items-center gap-1 rounded-full bg-surface-alt border border-border p-1">
+      <button
+        type="button"
+        aria-label="Decrease quantity"
+        onClick={() => onChange(Math.max(1, value - 1))}
+        disabled={value <= 1}
+        className="w-11 h-11 min-w-11 rounded-full grid place-items-center text-ink hover:bg-wine-tint disabled:opacity-30 active:scale-95 transition"
+      >
+        <Icon name="remove" size={20} />
+      </button>
+      <span className="tnum min-w-8 text-center text-lg font-bold" aria-live="polite">{value}</span>
+      <button
+        type="button"
+        aria-label="Increase quantity"
+        onClick={() => onChange(Math.min(max, value + 1))}
+        disabled={value >= max}
+        className="w-11 h-11 min-w-11 rounded-full grid place-items-center text-ink hover:bg-wine-tint disabled:opacity-30 active:scale-95 transition"
+      >
+        <Icon name="add" size={20} />
+      </button>
+    </div>
+  );
+}
+
+/** Animated money value — counts toward the target unless reduced motion is on. */
+function AnimatedMoney({ value, className }: { value: number; className?: string }) {
+  const reduceMotion = useReducedMotion();
+  const [display, setDisplay] = useState(value);
+  const prevRef = useRef(value);
+
+  useEffect(() => {
+    if (reduceMotion) return; // display derived directly below
+    const from = prevRef.current;
+    prevRef.current = value;
+    if (from === value) return;
+    const controls = animate(from, value, {
+      duration: 0.35,
+      ease: 'easeOut',
+      onUpdate: (v) => setDisplay(v),
+    });
+    return () => controls.stop();
+  }, [value, reduceMotion]);
+
+  const shown = reduceMotion ? value : display;
+  return <span className={`tnum ${className ?? ''}`}>{formatMoney(shown)}</span>;
+}
+
+/* ═══════════════════════ POS page ═══════════════════════ */
+
+export default function SellPage() {
+  const reduceMotion = useReducedMotion();
+
+  /* ── search ── */
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  /* ── cart (hydrated from localStorage on first render) ── */
+  const [cart, setCart] = useState<CartLine[]>(() => {
+    if (typeof window === 'undefined') return [];
+    return loadCart();
+  });
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('amount');
+  const [discountValue, setDiscountValue] = useState('');
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  /* ── payment ── */
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [tendered, setTendered] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [note, setNote] = useState('');
+
+  /* ── ui ── */
+  const [mobileTab, setMobileTab] = useState<'browse' | 'cart'>('browse');
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [receipt, setReceipt] = useState<SaleReceipt | null>(null);
+  const [flyDots, setFlyDots] = useState<{ id: number; fromX: number; fromY: number; toX: number; toY: number }[]>([]);
+  const [cartBump, setCartBump] = useState(0);
+  const idempotencyRef = useRef<string | null>(null);
+  const flyId = useRef(0);
+  const desktopCartRef = useRef<HTMLDivElement>(null);
+  const mobileCartTabRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    } catch { /* storage full — cart just won't persist */ }
+  }, [cart]);
+
+  /* ── debounce search ── */
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  /* ── run search ── */
+  const runSearch = useCallback(async (q: string, signal?: AbortSignal) => {
+    setSearching(true);
+    setSearchError(null);
+    try {
+      const items = await apiGetProducts(q, signal ?? new AbortController().signal);
+      setProducts(items);
+      setHasSearched(true);
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      setSearchError(e instanceof Error ? e.message : 'Search failed');
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async data fetch: setStates happen after await, not synchronously
+    runSearch(debouncedQuery, ctrl.signal);
+    return () => ctrl.abort();
+  }, [debouncedQuery, runSearch]);
+
+  /* ── keyboard shortcut: / or Cmd+K focuses search ── */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const typing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      if ((e.key === '/' && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  /* ── totals ── */
+  const subtotal = useMemo(() => cart.reduce((s, l) => s + l.unitPrice * l.quantity, 0), [cart]);
+  const discountAmount = useMemo(() => {
+    const v = parseFloat(discountValue) || 0;
+    if (v <= 0) return 0;
+    if (discountMode === 'percent') return Math.min(subtotal, (subtotal * Math.min(v, 100)) / 100);
+    return Math.min(subtotal, v);
+  }, [discountValue, discountMode, subtotal]);
+  const total = Math.max(0, subtotal - discountAmount);
+  const cartCount = useMemo(() => cart.reduce((s, l) => s + l.quantity, 0), [cart]);
+
+  const tenderedNum = parseMoney(tendered);
+  const change = Number.isNaN(tenderedNum) ? null : tenderedNum - total;
+
+  /* ── cart ops ── */
+  const cartTargetPos = useCallback(() => {
+    const candidates = [mobileCartTabRef.current, desktopCartRef.current];
+    for (const el of candidates) {
+      if (el && el.offsetParent !== null) {
+        const r = el.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      }
+    }
+    return { x: window.innerWidth - 60, y: 80 };
+  }, []);
+
+  const addToCart = useCallback((p: ApiProduct, fromX?: number, fromY?: number) => {
+    if (p.quantity_on_hand <= 0) {
+      toast.error(`"${p.name}" is out of stock.`);
+      return;
+    }
+    setCart((prev) => {
+      const existing = prev.find((l) => l.productId === p.id);
+      if (existing) {
+        if (existing.quantity >= p.quantity_on_hand) {
+          toast.warning(`Only ${p.quantity_on_hand} left of "${p.name}".`);
+          return prev;
+        }
+        return prev.map((l) => l.productId === p.id ? { ...l, quantity: l.quantity + 1, stock: p.quantity_on_hand } : l);
+      }
+      return [...prev, { productId: p.id, name: p.name, unitPrice: p.selling_price, quantity: 1, stock: p.quantity_on_hand }];
+    });
+    /* fly-to-cart animation (target measured at tap time) */
+    if (fromX != null && fromY != null && !reduceMotion) {
+      const target = cartTargetPos();
+      const id = ++flyId.current;
+      setFlyDots((d) => [...d, { id, fromX, fromY, toX: target.x, toY: target.y }]);
+    } else {
+      setCartBump((b) => b + 1);
+    }
+  }, [reduceMotion, cartTargetPos]);
+
+  const finishFly = useCallback((id: number) => {
+    setFlyDots((d) => d.filter((dot) => dot.id !== id));
+    setCartBump((b) => b + 1);
+  }, []);
+
+  const setQty = useCallback((productId: string, qty: number) => {
+    setCart((prev) => prev.map((l) => l.productId === productId ? { ...l, quantity: qty } : l));
+  }, []);
+
+  const removeLine = useCallback((productId: string) => {
+    setCart((prev) => prev.filter((l) => l.productId !== productId));
+  }, []);
+
+  const clearCart = useCallback(() => {
+    setCart([]);
+    setDiscountValue('');
+    setConfirmClear(false);
+    toast.info('Cart cleared.');
+  }, []);
+
+  /* ── validation ── */
+  const validateCheckout = useCallback((): string | null => {
+    if (cart.length === 0) return 'The cart is empty.';
+    if (paymentMethod === 'cash') {
+      if (tendered.trim() === '' || Number.isNaN(tenderedNum)) return 'Enter the amount tendered.';
+      if ((change ?? -1) < 0) return `Tendered amount is short by ${formatMoney(total - tenderedNum)}.`;
+    }
+    if (paymentMethod === 'mobile_money' && paymentReference.trim() === '') {
+      return 'Enter the mobile money transaction ID.';
+    }
+    return null;
+  }, [cart.length, paymentMethod, tendered, tenderedNum, change, total, paymentReference]);
+
+  /* ── checkout ── */
+  /* Ref mirror so the toast "Retry" action can re-invoke the latest checkout. */
+  const checkoutRef = useRef<() => void>(() => undefined);
+  const checkout = useCallback(async () => {
+    const problem = validateCheckout();
+    if (problem) {
+      toast.error(problem);
+      return;
+    }
+    setCheckingOut(true);
+    /* One idempotency key per checkout attempt — reused on retry so a flaky
+       network can never double-charge. Reset only on New Sale. */
+    if (!idempotencyRef.current) {
+      idempotencyRef.current = crypto.randomUUID();
+    }
+    try {
+      const res = await fetch('/api/v1/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+          paymentMethod: paymentMethod,
+          discount: Math.round(discountAmount * 100) / 100,
+          amountTendered: paymentMethod === 'cash' ? Math.round(tenderedNum * 100) / 100 : undefined,
+          paymentReference: paymentReference.trim() || undefined,
+          note: note.trim() || undefined,
+          idempotencyKey: idempotencyRef.current,
+        }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const code = body?.error?.code as string | undefined;
+        const message = body?.error?.message as string | undefined;
+        if (code === 'INSUFFICIENT_STOCK') {
+          toast.error(message ?? 'Not enough stock for one of the items.', { duration: 5000 });
+          /* refetch stock so the shelf reflects reality */
+          runSearch(debouncedQuery);
+        } else if (code === 'TENDERED_TOO_LOW') {
+          toast.error('Tendered amount is too low.');
+        } else {
+          toast.error(message ?? `Sale failed (${res.status}). Nothing was charged.`);
+        }
+        return;
+      }
+      const receiptData = body?.data as SaleReceipt;
+      setReceipt(receiptData);
+      setCart([]);
+      setDiscountValue('');
+      setTendered('');
+      setPaymentReference('');
+      setNote('');
+      setConfirmClear(false);
+      toast.success(`Sale ${receiptData.receipt_number} recorded.`);
+      /* refresh stock levels in the background */
+      runSearch(debouncedQuery);
+    } catch {
+      toast.error('Network error — your sale was NOT recorded. Check connection and try again.', {
+        duration: 6000,
+        action: { label: 'Retry', onClick: () => checkoutRef.current() },
+      });
+    } finally {
+      setCheckingOut(false);
+    }
+  }, [validateCheckout, cart, paymentMethod, discountAmount, tenderedNum, paymentReference, note, runSearch, debouncedQuery]);
+
+  useEffect(() => {
+    checkoutRef.current = checkout;
+  });
+
+  const newSale = useCallback(() => {
+    setReceipt(null);
+    idempotencyRef.current = null;
+    setMobileTab('browse');
+    searchRef.current?.focus();
+  }, []);
+
+  /* ── render helpers ── */
+  const stockBadge = (p: ApiProduct) => {
+    if (p.quantity_on_hand <= 0)
+      return <span className="inline-flex items-center gap-1 rounded-full bg-danger-bg text-danger text-xs font-semibold px-2.5 py-1"><Icon name="block" size={14} />Out</span>;
+    if (p.quantity_on_hand <= LOW_STOCK_AT)
+      return <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg text-warning text-xs font-semibold px-2.5 py-1"><Icon name="warning" size={14} />{p.quantity_on_hand} left</span>;
+    return <span className="inline-flex items-center gap-1 rounded-full bg-success-bg text-success text-xs font-semibold px-2.5 py-1"><Icon name="check_circle" size={14} />In stock</span>;
+  };
+
+  const quickCash = (amount: number | 'exact') => {
+    setTendered(amount === 'exact' ? total.toFixed(2) : String(amount));
+  };
+
+  return (
+    <div className="min-h-screen bg-parchment text-ink">
+      <Toaster position="top-center" richColors closeButton />
+      {/* Print styles — receipt only */}
+      <style>{`
+        @media print {
+          .pos-no-print { display: none !important; }
+          .pos-print-only { display: block !important; }
+          body { background: #fff !important; }
+          [data-sonner-toaster] { display: none !important; }
+        }
+      `}</style>
+
+      {/* Fly-to-cart dots */}
+      <AnimatePresence>
+        {flyDots.map((dot) => (
+          <motion.span
+            key={dot.id}
+            className="fixed z-[100] pointer-events-none w-10 h-10 rounded-full bg-wine text-white grid place-items-center shadow-lg"
+            style={{ left: 0, top: 0 }}
+            initial={{ x: dot.fromX - 20, y: dot.fromY - 20, scale: 1, opacity: 1 }}
+            animate={{ x: dot.toX - 20, y: dot.toY - 20, scale: 0.35, opacity: 0.85 }}
+            exit={{ opacity: 0, scale: 0.2 }}
+            transition={{ duration: 0.55, ease: [0.3, 0.7, 0.4, 1] }}
+            onAnimationComplete={() => finishFly(dot.id)}
+          >
+            <Icon name="menu_book" size={20} />
+          </motion.span>
+        ))}
+      </AnimatePresence>
+
+      {/* ═══ Header ═══ */}
+      <header className="pos-no-print sticky top-0 z-30 bg-parchment/95 backdrop-blur border-b border-border">
+        <div className="max-w-7xl mx-auto px-4 pt-4 pb-3">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-11 h-11 rounded-xl bg-wine text-white grid place-items-center shrink-0">
+              <Icon name="point_of_sale" size={26} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h1 className="font-display text-2xl leading-none">Point of Sale</h1>
+              <p className="text-sm text-ink-muted">
+                {new Date().toLocaleDateString('en-GH', { weekday: 'long', day: 'numeric', month: 'long' })}
+              </p>
+            </div>
+            <motion.div
+              key={cartBump}
+              ref={desktopCartRef}
+              initial={reduceMotion ? false : { scale: 1.35 }}
+              animate={{ scale: 1 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+              className="hidden lg:flex items-center gap-2 rounded-full bg-wine-tint text-wine font-bold px-4 py-2"
+              aria-live="polite"
+              aria-label={`${cartCount} items in cart`}
+            >
+              <Icon name="shopping_cart" size={20} />
+              <span className="tnum">{cartCount}</span>
+            </motion.div>
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <Icon name="search" size={22} className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search books, Bibles, stationery…"
+              aria-label="Search products"
+              autoComplete="off"
+              className="w-full h-14 rounded-xl bg-surface border-2 border-border-input pl-12 pr-24 text-lg placeholder:text-ink-muted/70 focus:border-wine focus:outline-none transition"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {searching && <Icon name="progress_activity" size={20} className="text-wine animate-spin" />}
+              <kbd className="hidden sm:inline-flex items-center gap-1 rounded-md bg-surface-alt border border-border px-2 py-1 text-xs font-semibold text-ink-muted">
+                ⌘K
+              </kbd>
+            </div>
+          </div>
+
+          {/* Mobile tabs */}
+          <div className="lg:hidden mt-3 grid grid-cols-2 gap-2 p-1 rounded-xl bg-surface-alt border border-border" role="tablist" aria-label="POS views">
+            {(['browse', 'cart'] as const).map((tab) => (
+              <button
+                key={tab}
+                role="tab"
+                aria-selected={mobileTab === tab}
+                ref={tab === 'cart' ? mobileCartTabRef : undefined}
+                onClick={() => setMobileTab(tab)}
+                className={`relative h-12 rounded-lg text-base font-bold flex items-center justify-center gap-2 transition ${
+                  mobileTab === tab ? 'text-white' : 'text-ink-muted'
+                }`}
+              >
+                {mobileTab === tab && (
+                  <motion.span
+                    layoutId="pos-mobile-tab"
+                    className="absolute inset-0 rounded-lg bg-wine"
+                    transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                  />
+                )}
+                <span className="relative flex items-center gap-2">
+                  <Icon name={tab === 'browse' ? 'storefront' : 'shopping_cart'} size={20} />
+                  {tab === 'browse' ? 'Browse' : 'Cart'}
+                  {tab === 'cart' && cartCount > 0 && (
+                    <motion.span
+                      key={cartBump}
+                      initial={reduceMotion ? false : { scale: 1.5 }}
+                      animate={{ scale: 1 }}
+                      className="relative tnum min-w-6 h-6 px-1 rounded-full bg-gold text-ink text-sm font-bold grid place-items-center"
+                    >
+                      {cartCount}
+                    </motion.span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      {/* ═══ Main ═══ */}
+      <main className="pos-no-print max-w-7xl mx-auto px-4 py-4 pb-28 lg:pb-12">
+        <div className="lg:grid lg:grid-cols-[1fr_380px] lg:gap-6 lg:items-start">
+
+          {/* ── Product grid (2/3) ── */}
+          <section aria-label="Products" className={mobileTab === 'cart' ? 'hidden lg:block' : ''}>
+            {searchError ? (
+              <div className="rounded-xl bg-danger-bg border border-danger/30 p-6 text-center">
+                <Icon name="cloud_off" size={36} className="text-danger mx-auto mb-2" />
+                <p className="font-semibold text-danger mb-1">Couldn&apos;t load products</p>
+                <p className="text-sm text-ink-muted mb-4">{searchError}</p>
+                <button
+                  onClick={() => runSearch(debouncedQuery)}
+                  className="h-12 px-6 rounded-xl bg-wine text-white font-bold inline-flex items-center gap-2 active:scale-95 transition"
+                >
+                  <Icon name="refresh" size={20} /> Retry
+                </button>
+              </div>
+            ) : !hasSearched && !searching ? (
+              <div className="rounded-xl bg-surface border border-border p-10 text-center">
+                <div className="w-16 h-16 rounded-full bg-wine-tint text-wine grid place-items-center mx-auto mb-4">
+                  <Icon name="menu_book" size={32} />
+                </div>
+                <h2 className="font-display text-xl mb-1">Ready to serve</h2>
+                <p className="text-ink-muted">Search above to find books, Bibles and stationery.<br />Tap a card to add it to the cart.</p>
+              </div>
+            ) : products.length === 0 && !searching ? (
+              <div className="rounded-xl bg-surface border border-border p-10 text-center">
+                <Icon name="search_off" size={40} className="text-ink-muted mx-auto mb-3" />
+                <h2 className="font-display text-xl mb-1">No matches</h2>
+                <p className="text-ink-muted">Nothing found for “{debouncedQuery}”. Try another title or author.</p>
+              </div>
+            ) : (
+              <ul className="grid grid-cols-2 md:grid-cols-3 gap-3" aria-label="Search results">
+                <AnimatePresence>
+                  {products.map((p, i) => {
+                    const out = p.quantity_on_hand <= 0;
+                    return (
+                      <motion.li
+                        key={p.id}
+                        initial={reduceMotion ? false : { opacity: 0, y: 14 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        transition={{ duration: 0.25, delay: reduceMotion ? 0 : Math.min(i * 0.035, 0.35) }}
+                        layout
+                      >
+                        <button
+                          type="button"
+                          disabled={out}
+                          onClick={(e) => addToCart(p, e.clientX, e.clientY)}
+                          className={`w-full min-h-[44px] text-left rounded-xl bg-surface border border-border p-3 shadow-sm flex flex-col gap-2 transition active:scale-[0.97] ${
+                            out ? 'opacity-60' : 'hover:border-wine/60 hover:shadow-md'
+                          }`}
+                          aria-label={`Add ${p.name} to cart, ${formatMoney(p.selling_price)}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="w-12 h-12 rounded-lg bg-wine-tint text-wine grid place-items-center shrink-0">
+                              <Icon name="menu_book" size={26} />
+                            </div>
+                            {stockBadge(p)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold leading-tight line-clamp-2">{p.name}</p>
+                            {p.author_or_brand && (
+                              <p className="text-sm text-ink-muted truncate">{p.author_or_brand}</p>
+                            )}
+                          </div>
+                          <div className="mt-auto flex items-center justify-between">
+                            <span className="tnum text-lg font-bold text-wine">{formatMoney(p.selling_price)}</span>
+                            <span className={`w-9 h-9 rounded-full grid place-items-center ${out ? 'bg-surface-alt text-ink-muted' : 'bg-wine text-white'}`}>
+                              <Icon name="add" size={20} />
+                            </span>
+                          </div>
+                        </button>
+                      </motion.li>
+                    );
+                  })}
+                </AnimatePresence>
+              </ul>
+            )}
+          </section>
+
+          {/* ── Cart panel (1/3) ── */}
+          <aside aria-label="Cart and checkout" className={`${mobileTab === 'browse' ? 'hidden lg:block' : ''} lg:sticky lg:top-[190px]`}>
+            <div className="rounded-xl bg-surface border border-border shadow-sm overflow-hidden">
+              {/* Cart lines */}
+              <div className="p-4 border-b border-border">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="font-display text-xl flex items-center gap-2">
+                    <Icon name="shopping_cart" size={22} /> Cart
+                    {cartCount > 0 && <span className="tnum text-sm font-sans font-bold bg-wine-tint text-wine rounded-full px-2.5 py-0.5">{cartCount}</span>}
+                  </h2>
+                  {cart.length > 0 && (
+                    confirmClear ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-danger">Clear cart?</span>
+                        <button onClick={clearCart} className="h-11 px-4 rounded-lg bg-danger text-white text-sm font-bold active:scale-95 transition">Yes</button>
+                        <button onClick={() => setConfirmClear(false)} className="h-11 px-4 rounded-lg bg-surface-alt border border-border text-sm font-bold active:scale-95 transition">Keep</button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmClear(true)}
+                        className="h-11 px-3 rounded-lg text-danger text-sm font-bold inline-flex items-center gap-1 hover:bg-danger-bg active:scale-95 transition"
+                      >
+                        <Icon name="delete" size={18} /> Clear
+                      </button>
+                    )
+                  )}
+                </div>
+
+                {cart.length === 0 ? (
+                  <div className="py-8 text-center text-ink-muted">
+                    <Icon name="shopping_basket" size={40} className="mx-auto mb-2 opacity-50" />
+                    <p className="font-semibold">Cart is empty</p>
+                    <p className="text-sm">Tap a product to add it.</p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-border max-h-72 overflow-y-auto -mx-4 px-4">
+                    <AnimatePresence initial={false}>
+                      {cart.map((l) => (
+                        <motion.li
+                          key={l.productId}
+                          layout
+                          initial={reduceMotion ? false : { opacity: 0, x: 24 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -24, height: 0, marginTop: 0, marginBottom: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="py-3 flex items-center gap-3 overflow-hidden"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold leading-tight truncate">{l.name}</p>
+                            <p className="tnum text-sm text-ink-muted">{formatMoney(l.unitPrice)} each</p>
+                          </div>
+                          <Stepper value={l.quantity} max={l.stock} onChange={(v) => setQty(l.productId, v)} />
+                          <div className="w-20 text-right">
+                            <p className="tnum font-bold">{formatMoney(l.unitPrice * l.quantity)}</p>
+                          </div>
+                          <button
+                            onClick={() => removeLine(l.productId)}
+                            aria-label={`Remove ${l.name}`}
+                            className="w-11 h-11 rounded-full grid place-items-center text-ink-muted hover:text-danger hover:bg-danger-bg active:scale-90 transition shrink-0"
+                          >
+                            <Icon name="close" size={20} />
+                          </button>
+                        </motion.li>
+                      ))}
+                    </AnimatePresence>
+                  </ul>
+                )}
+              </div>
+
+              {/* Discount */}
+              {cart.length > 0 && (
+                <div className="p-4 border-b border-border">
+                  <div className="flex items-center gap-2">
+                    <Icon name="sell" size={20} className="text-ink-muted" />
+                    <div className="flex rounded-lg bg-surface-alt border border-border p-0.5" role="group" aria-label="Discount type">
+                      {(['amount', 'percent'] as DiscountMode[]).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setDiscountMode(m)}
+                          aria-pressed={discountMode === m}
+                          className={`h-10 px-3 rounded-md text-sm font-bold transition ${discountMode === m ? 'bg-wine text-white' : 'text-ink-muted'}`}
+                        >
+                          {m === 'amount' ? '₵' : '%'}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                      placeholder={discountMode === 'amount' ? '0.00' : '0'}
+                      aria-label={discountMode === 'amount' ? 'Discount amount in cedis' : 'Discount percent'}
+                      className="tnum h-11 flex-1 min-w-0 rounded-lg bg-surface border-2 border-border-input px-3 text-lg focus:border-wine focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Totals */}
+              <div className="p-4 border-b border-border space-y-1.5 bg-surface-alt/60">
+                <div className="flex justify-between text-ink-muted">
+                  <span>Subtotal</span>
+                  <AnimatedMoney value={subtotal} className="font-semibold text-ink" />
+                </div>
+                {discountAmount > 0 && (
+                  <div className="flex justify-between text-success">
+                    <span>Discount{discountMode === 'percent' && discountValue ? ` (${discountValue}%)` : ''}</span>
+                    <span className="tnum font-semibold">−{formatMoney(discountAmount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-baseline pt-1">
+                  <span className="font-bold text-lg">Total</span>
+                  <AnimatedMoney value={total} className="text-[32px] leading-none font-bold text-wine" />
+                </div>
+              </div>
+
+              {/* Payment */}
+              {cart.length > 0 && (
+                <div className="p-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-bold text-ink-muted mb-2 uppercase tracking-wide">Payment method</p>
+                    <div className="grid grid-cols-4 gap-1.5 p-1 rounded-xl bg-surface-alt border border-border" role="radiogroup" aria-label="Payment method">
+                      {PAYMENT_METHODS.map((m) => {
+                        const active = paymentMethod === m.value;
+                        return (
+                          <button
+                            key={m.value}
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => setPaymentMethod(m.value)}
+                            className={`relative h-14 rounded-lg flex flex-col items-center justify-center gap-0.5 text-xs font-bold transition ${
+                              active ? 'text-white' : 'text-ink-muted hover:text-ink'
+                            }`}
+                          >
+                            {active && (
+                              <motion.span
+                                layoutId="pay-pill"
+                                className="absolute inset-0 rounded-lg bg-wine"
+                                transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                              />
+                            )}
+                            <span className="relative"><Icon name={m.icon} size={22} /></span>
+                            <span className="relative">{m.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                      key={paymentMethod}
+                      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      transition={{ duration: 0.18 }}
+                    >
+                      {paymentMethod === 'cash' && (
+                        <div className="space-y-3">
+                          <div>
+                            <label htmlFor="tendered" className="text-sm font-bold text-ink-muted uppercase tracking-wide">Amount tendered</label>
+                            <div className="relative mt-1">
+                              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-bold text-ink-muted">₵</span>
+                              <input
+                                id="tendered"
+                                type="number"
+                                inputMode="decimal"
+                                min="0"
+                                value={tendered}
+                                onChange={(e) => setTendered(e.target.value)}
+                                placeholder="0.00"
+                                className="tnum w-full h-16 rounded-xl bg-surface border-2 border-border-input pl-10 pr-4 text-3xl font-bold focus:border-wine focus:outline-none"
+                              />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            <button onClick={() => quickCash('exact')} className="h-12 rounded-lg bg-wine-tint text-wine text-sm font-bold active:scale-95 transition">Exact</button>
+                            {QUICK_CASH.map((a) => (
+                              <button key={a} onClick={() => quickCash(a)} className="tnum h-12 rounded-lg bg-surface-alt border border-border text-sm font-bold active:scale-95 transition">₵{a}</button>
+                            ))}
+                          </div>
+                          <div className={`rounded-xl p-3 text-center ${change != null && change >= 0 ? 'bg-success-bg' : 'bg-surface-alt'}`}>
+                            <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Change due</p>
+                            <p className={`tnum text-4xl font-bold ${change != null && change >= 0 ? 'text-success' : 'text-ink-muted'}`}>
+                              {change == null ? '—' : formatMoney(Math.max(0, change))}
+                            </p>
+                            {change != null && change < 0 && (
+                              <p className="text-sm font-bold text-danger mt-1">Short by {formatMoney(-change)}</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {paymentMethod === 'mobile_money' && (
+                        <div>
+                          <label htmlFor="momo-ref" className="text-sm font-bold text-ink-muted uppercase tracking-wide">MoMo transaction ID</label>
+                          <input
+                            id="momo-ref"
+                            type="text"
+                            value={paymentReference}
+                            onChange={(e) => setPaymentReference(e.target.value)}
+                            placeholder="e.g. 1234567890"
+                            autoComplete="off"
+                            className="mt-1 w-full h-14 rounded-xl bg-surface border-2 border-border-input px-4 text-lg focus:border-wine focus:outline-none"
+                          />
+                          <p className="text-sm text-ink-muted mt-1.5 flex items-center gap-1.5">
+                            <Icon name="info" size={16} /> Confirm the MoMo alert on the customer&apos;s phone first.
+                          </p>
+                        </div>
+                      )}
+
+                      {(paymentMethod === 'card' || paymentMethod === 'bank_transfer') && (
+                        <div>
+                          <label htmlFor="card-ref" className="text-sm font-bold text-ink-muted uppercase tracking-wide">
+                            Reference <span className="normal-case font-normal">(optional)</span>
+                          </label>
+                          <input
+                            id="card-ref"
+                            type="text"
+                            value={paymentReference}
+                            onChange={(e) => setPaymentReference(e.target.value)}
+                            placeholder="Receipt / approval code"
+                            autoComplete="off"
+                            className="mt-1 w-full h-14 rounded-xl bg-surface border-2 border-border-input px-4 text-lg focus:border-wine focus:outline-none"
+                          />
+                        </div>
+                      )}
+                    </motion.div>
+                  </AnimatePresence>
+
+                  <div>
+                    <label htmlFor="sale-note" className="text-sm font-bold text-ink-muted uppercase tracking-wide">
+                      Note <span className="normal-case font-normal">(optional)</span>
+                    </label>
+                    <input
+                      id="sale-note"
+                      type="text"
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      placeholder="e.g. Sunday service bulk buy"
+                      maxLength={300}
+                      className="mt-1 w-full h-12 rounded-xl bg-surface border-2 border-border-input px-4 focus:border-wine focus:outline-none"
+                    />
+                  </div>
+
+                  <motion.button
+                    onClick={checkout}
+                    disabled={checkingOut || cart.length === 0}
+                    whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+                    className="w-full h-16 rounded-xl bg-wine text-white text-xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 hover:bg-wine-hover transition"
+                  >
+                    {checkingOut ? (
+                      <><Icon name="progress_activity" size={26} className="animate-spin" /> Processing…</>
+                    ) : (
+                      <><Icon name="payments" size={26} /> Charge <AnimatedMoney value={total} /></>
+                    )}
+                  </motion.button>
+                  <p className="text-center text-xs text-ink-muted flex items-center justify-center gap-1">
+                    <Icon name="lock" size={14} /> Sale is recorded atomically — safe to retry on network failure.
+                  </p>
+                </div>
+              )}
+            </div>
+          </aside>
+        </div>
+      </main>
+
+      {/* ═══ Success overlay + receipt ═══ */}
+      <AnimatePresence>
+        {receipt && (
+          <motion.div
+            className="pos-no-print fixed inset-0 z-[90] bg-ink/60 backdrop-blur-sm overflow-y-auto"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sale complete"
+          >
+            <div className="min-h-full flex items-start sm:items-center justify-center p-4 py-8">
+              <motion.div
+                initial={reduceMotion ? false : { scale: 0.92, y: 24, opacity: 0 }}
+                animate={{ scale: 1, y: 0, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+                className="w-full max-w-md bg-surface rounded-2xl shadow-2xl overflow-hidden"
+              >
+                {/* Checkmark */}
+                <div className="pt-8 pb-2 flex flex-col items-center">
+                  <motion.svg
+                    width="96" height="96" viewBox="0 0 96 96" fill="none"
+                    initial={reduceMotion ? false : { scale: 0.6, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ type: 'spring', stiffness: 260, damping: 20, delay: 0.1 }}
+                    role="img" aria-label="Sale successful"
+                  >
+                    <motion.circle
+                      cx="48" cy="48" r="44"
+                      stroke="var(--success)" strokeWidth="6"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 0.5, ease: 'easeOut', delay: 0.2 }}
+                    />
+                    <motion.path
+                      d="M30 49 l13 13 l24 -27"
+                      stroke="var(--success)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 0.4, ease: 'easeOut', delay: 0.6 }}
+                    />
+                  </motion.svg>
+                  <h2 className="font-display text-2xl mt-3">Sale complete</h2>
+                  <p className="tnum text-ink-muted font-semibold">{receipt.receipt_number}</p>
+                </div>
+
+                {/* Receipt preview */}
+                <div className="mx-4 mb-4 rounded-xl border border-border bg-surface-alt p-4 max-h-64 overflow-y-auto">
+                  <ReceiptBody receipt={receipt} />
+                </div>
+
+                <div className="p-4 pt-0 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => window.print()}
+                    className="h-14 rounded-xl bg-surface-alt border-2 border-border-input font-bold inline-flex items-center justify-center gap-2 active:scale-95 transition"
+                  >
+                    <Icon name="print" size={22} /> Print
+                  </button>
+                  <button
+                    onClick={newSale}
+                    autoFocus
+                    className="h-14 rounded-xl bg-wine text-white font-bold inline-flex items-center justify-center gap-2 hover:bg-wine-hover active:scale-95 transition"
+                  >
+                    <Icon name="add_shopping_cart" size={22} /> New Sale
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Print-only receipt — sibling of the overlay so print CSS can isolate it */}
+      {receipt && (
+        <div className="pos-print-only hidden bg-white text-black p-6 max-w-[80mm] mx-auto" aria-hidden="true">
+          <ReceiptBody receipt={receipt} print />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════ Receipt ═══════════════════════ */
+
+function ReceiptBody({ receipt, print = false }: { receipt: SaleReceipt; print?: boolean }) {
+  const change = receipt.amount_tendered != null ? receipt.amount_tendered - receipt.total : null;
+  const soldAt = new Date(receipt.sold_at);
+  const text = print ? 'text-black' : 'text-ink';
+  return (
+    <div className={`${text} text-sm`}>
+      <div className="text-center mb-3">
+        <p className="font-display text-lg font-bold">Church Bookshop</p>
+        <p className="tnum font-bold">{receipt.receipt_number}</p>
+        <p className="text-xs opacity-70">
+          {soldAt.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}{' '}
+          {soldAt.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+        <p className="text-xs opacity-70">Cashier: {receipt.cashier_name}</p>
+      </div>
+      <div className="border-t border-dashed border-current opacity-40 my-2" />
+      <ul className="space-y-1.5">
+        {receipt.items.map((it, i) => (
+          <li key={i} className="flex justify-between gap-2">
+            <span className="flex-1">
+              {it.name}
+              <span className="tnum opacity-70"> × {it.quantity}</span>
+            </span>
+            <span className="tnum font-semibold">{formatMoney(it.unit_price * it.quantity)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="border-t border-dashed border-current opacity-40 my-2" />
+      <dl className="space-y-1">
+        <div className="flex justify-between"><dt className="opacity-70">Subtotal</dt><dd className="tnum">{formatMoney(receipt.subtotal)}</dd></div>
+        {receipt.discount > 0 && (
+          <div className="flex justify-between"><dt className="opacity-70">Discount</dt><dd className="tnum">−{formatMoney(receipt.discount)}</dd></div>
+        )}
+        <div className="flex justify-between text-base font-bold"><dt>Total</dt><dd className="tnum">{formatMoney(receipt.total)}</dd></div>
+        <div className="flex justify-between"><dt className="opacity-70">Paid via</dt><dd className="font-semibold">{PAYMENT_LABELS[receipt.payment_method as PaymentMethod] ?? receipt.payment_method}</dd></div>
+        {receipt.amount_tendered != null && (
+          <>
+            <div className="flex justify-between"><dt className="opacity-70">Tendered</dt><dd className="tnum">{formatMoney(receipt.amount_tendered)}</dd></div>
+            <div className="flex justify-between"><dt className="opacity-70">Change</dt><dd className="tnum">{formatMoney(Math.max(0, change ?? 0))}</dd></div>
+          </>
+        )}
+        {receipt.payment_reference && (
+          <div className="flex justify-between"><dt className="opacity-70">Reference</dt><dd className="tnum break-all text-right">{receipt.payment_reference}</dd></div>
+        )}
+      </dl>
+      <div className="border-t border-dashed border-current opacity-40 my-2" />
+      <p className="text-center font-display italic">Thank you and God bless you.</p>
+    </div>
+  );
+}
