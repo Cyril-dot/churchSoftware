@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════════
+   CHURCH BOOKSHOP — Design Tokens
+   Warm parchment / wine / gold identity. All text pairs ≥ 4.5:1.
+   ═══════════════════════════════════════════════════════════════ */
+
+@theme {
+  --color-parchment: #F6F0E2;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #FBF7EC;
+  --color-border: #E4D9BC;
+  --color-border-input: #948155;
+  --color-ink: #1B2430;
+  --color-ink-muted: #5B6472;
+  --color-wine: #6B2338;
+  --color-wine-hover: #4E192A;
+  --color-wine-tint: #F1DEE1;
+  --color-gold: #B8923F;
+  --color-focus: #8A5A00;
+  --color-success: #2F5D3A;
+  --color-success-bg: #E3EFE5;
+  --color-danger: #9A3F22;
+  --color-danger-bg: #F8E6DC;
+  --color-warning: #6E5216;
+  --color-warning-bg: #F6EACB;
+  --color-info: #2F4E5E;
+  --color-info-bg: #E0EAED;
+  --color-side-bg: #241A12;
+  --color-side-text: #E9DFC9;
+  --color-side-muted: #B9AA8A;
+  --color-side-accent: #D9B15A;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Source Sans 3", system-ui, sans-serif;
+}
+
+:root {
+  --bg: #F6F0E2;
+  --surface: #FFFFFF;
+  --surface-alt: #FBF7EC;
+  --border: #E4D9BC;
+  --border-input: #948155;
+  --ink: #1B2430;
+  --ink-muted: #5B6472;
+  --wine: #6B2338;
+  --wine-hover: #4E192A;
+  --wine-tint: #F1DEE1;
+  --gold: #B8923F;
+  --focus: #8A5A00;
+  --success: #2F5D3A; --success-bg: #E3EFE5;
+  --danger: #9A3F22; --danger-bg: #F8E6DC;
+  --warning: #6E5216; --warning-bg: #F6EACB;
+  --info: #2F4E5E; --info-bg: #E0EAED;
+  --side-bg: #241A12;
+  --side-text: #E9DFC9;
+  --side-muted: #B9AA8A;
+  --side-accent: #D9B15A;
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 4px 14px rgba(27,36,48,.06);
+}
+
+* { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* Material Symbols — Google Icons */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* Display type */
+.font-display {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+/* Tabular numbers for money columns */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* Focus visible */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-input); }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  html { scroll-behavior: auto; }
+}
+
+/* ── Bubbly landing — pure CSS entrance animations (work with zero JS) ── */
+@keyframes bubbly-rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes bubbly-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+@keyframes bubbly-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes bubbly-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.bubbly-rise { animation: bubbly-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.bubbly-float { animation: bubbly-float 6s ease-in-out infinite; }
+.bubbly-bob { animation: bubbly-bob 3s ease-in-out infinite; }
+.bubbly-marquee-track { animation: bubbly-marquee 24s linear infinite; }
+.bubbly-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.bubbly-card:hover { transform: translateY(-6px); }
+.bubbly-card:active { transform: translateY(2px); }
