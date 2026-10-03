@@ -1,0 +1,176 @@
+// Demo mode API dispatcher — serves mock data when DATABASE_URL is not set.
+// This lets anyone preview and test the full app without a Neon database.
+
+import { NextRequest, NextResponse } from 'next/server';
+import { DEMO_USERS, DEMO_PRODUCTS, DEMO_SALES, DEMO_SETTINGS, DEMO_CATEGORIES } from './demo-data';
+
+const DEMO_COOKIE = 'bookshop_demo_session';
+
+function ok(data: unknown, status = 200) {
+  return NextResponse.json({ data }, { status });
+}
+
+function getDemoUser(req: NextRequest) {
+  const id = req.cookies.get(DEMO_COOKIE)?.value;
+  return DEMO_USERS.find((u) => u.id === id) || null;
+}
+
+function requireDemoUser(req: NextRequest) {
+  const user = getDemoUser(req);
+  if (!user) {
+    return NextResponse.json({ error: { code: 'UNAUTHORIZED', message: 'Please sign in.' } }, { status: 401 });
+  }
+  return user;
+}
+
+export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
+  const path = req.nextUrl.pathname;
+  const method = req.method;
+
+  // ── Auth ──
+  if (path === '/api/v1/auth/status' && method === 'GET') {
+    return ok({ needsSetup: false, demoMode: true });
+  }
+  if (path === '/api/v1/auth/login' && method === 'POST') {
+    const body = await req.json().catch(() => ({}));
+    const user = DEMO_USERS.find((u) => u.email === (body.email || '').toLowerCase());
+    // Demo password is "password123" for all, but accept anything for easy testing
+    if (!user) {
+      return NextResponse.json(
+        { error: { code: 'INVALID', message: 'Invalid email or password.' } },
+        { status: 401 }
+      );
+    }
+    const res = ok({ user });
+    res.cookies.set(DEMO_COOKIE, user.id, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 28800 });
+    return res;
+  }
+  if (path === '/api/v1/auth/logout' && method === 'POST') {
+    const res = ok({});
+    res.cookies.delete(DEMO_COOKIE);
+    return res;
+  }
+  if (path === '/api/v1/auth/me' && method === 'GET') {
+    const user = getDemoUser(req);
+    if (!user) return NextResponse.json({ error: { code: 'UNAUTHORIZED', message: 'Please sign in.' } }, { status: 401 });
+    return ok({ id: user.id, name: user.name, email: user.email, role: user.role });
+  }
+
+  // All routes below need auth
+  const user = requireDemoUser(req);
+  if (user instanceof NextResponse) return user;
+
+  // ── Products ──
+  if (path === '/api/v1/products' && method === 'GET') {
+    const search = (req.nextUrl.searchParams.get('search') || '').toLowerCase();
+    const lowStock = req.nextUrl.searchParams.get('lowStock') === '1';
+    let items = DEMO_PRODUCTS.filter((p) => p.active);
+    if (search) items = items.filter((p) => p.name.toLowerCase().includes(search));
+    if (lowStock) items = items.filter((p) => p.quantity_on_hand <= p.reorder_level);
+    // Strip cost for cashier
+    const mapped = items.map((p) => {
+      const { cost_price, ...rest } = p;
+      return user.role === 'cashier' ? rest : p;
+    });
+    return ok({ items: mapped, nextCursor: null });
+  }
+
+  // ── Categories ──
+  if (path === '/api/v1/categories' && method === 'GET') {
+    return ok({ items: DEMO_CATEGORIES.map((name, i) => ({ id: `cat-${i}`, name })) });
+  }
+
+  // ── Sales ──
+  if (path === '/api/v1/sales' && method === 'GET') {
+    let sales = DEMO_SALES;
+    if (user.role === 'cashier') sales = sales.filter((s) => s.sold_by === user.id);
+    return ok({ items: sales.slice(0, 50), nextCursor: null });
+  }
+  if (path === '/api/v1/sales' && method === 'POST') {
+    const body = await req.json().catch(() => ({}));
+    const items = (body.items || []).map((it: any) => {
+      const p = DEMO_PRODUCTS.find((x) => x.id === it.productId);
+      return { name: p?.name || 'Unknown', quantity: it.quantity, unit_price: p?.selling_price || 0 };
+    });
+    const subtotal = items.reduce((s: number, i: any) => s + i.quantity * i.unit_price, 0);
+    const discount = body.discount || 0;
+    const receipt = {
+      id: `sale-demo-${Date.now()}`,
+      receipt_number: `R-${String(2000 + DEMO_SALES.length).padStart(6, '0')}`,
+      sold_at: new Date().toISOString(),
+      cashier_name: user.name,
+      items,
+      subtotal,
+      discount,
+      total: subtotal - discount,
+      amount_tendered: body.amountTendered ?? null,
+      payment_method: body.paymentMethod,
+      payment_reference: body.paymentReference || null,
+    };
+    return ok({ receipt }, 201);
+  }
+
+  // ── Reports ──
+  if (path === '/api/v1/reports/summary' && method === 'GET') {
+    const revenue = DEMO_SALES.reduce((s, x) => s + x.total, 0);
+    const cogs = DEMO_SALES.reduce(
+      (s, x) => s + x.items.reduce((a, i) => {
+        const p = DEMO_PRODUCTS.find((p) => p.name === i.name);
+        return a + i.quantity * (p?.cost_price || 0);
+      }, 0), 0);
+    return ok({
+      revenue, transactions: DEMO_SALES.length,
+      discounts: DEMO_SALES.reduce((s, x) => s + x.discount, 0),
+      cogs, grossProfit: revenue - cogs,
+    });
+  }
+  if (path === '/api/v1/reports/sales-by-day' && method === 'GET') {
+    const byDay: Record<string, { revenue: number; n: number }> = {};
+    for (const s of DEMO_SALES) {
+      const day = s.sold_at.slice(0, 10);
+      byDay[day] = byDay[day] || { revenue: 0, n: 0 };
+      byDay[day].revenue += s.total;
+      byDay[day].n++;
+    }
+    return ok(Object.entries(byDay).sort().slice(-7).map(([day, v]) => ({ day, ...v })));
+  }
+  if (path === '/api/v1/reports/by-payment' && method === 'GET') {
+    const by: Record<string, { amount: number; n: number }> = {};
+    for (const s of DEMO_SALES) {
+      by[s.payment_method] = by[s.payment_method] || { amount: 0, n: 0 };
+      by[s.payment_method].amount += s.total;
+      by[s.payment_method].n++;
+    }
+    return ok(Object.entries(by).map(([payment_method, v]) => ({ payment_method, ...v })));
+  }
+  if (path === '/api/v1/reports/top-items' && method === 'GET') {
+    const by: Record<string, { units: number; revenue: number }> = {};
+    for (const s of DEMO_SALES) {
+      for (const i of s.items) {
+        by[i.name] = by[i.name] || { units: 0, revenue: 0 };
+        by[i.name].units += i.quantity;
+        by[i.name].revenue += i.quantity * i.unit_price;
+      }
+    }
+    return ok(Object.entries(by).map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.units - a.units).slice(0, 10));
+  }
+
+  // ── Settings ──
+  if (path === '/api/v1/settings' && method === 'GET') return ok(DEMO_SETTINGS);
+
+  // ── Users (admin demo) ──
+  if (path === '/api/v1/users' && method === 'GET') {
+    return ok({ items: DEMO_USERS.map((u) => ({ ...u, active: true, last_login_at: new Date().toISOString() })) });
+  }
+
+  // Fallback: not implemented in demo
+  return NextResponse.json(
+    { error: { code: 'DEMO_LIMIT', message: 'This action needs a real database. Connect Neon to unlock it.' } },
+    { status: 501 }
+  );
+}
+
+export function isDemoRequest(req: NextRequest): boolean {
+  return !process.env.DATABASE_URL;
+}
