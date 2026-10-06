@@ -924,7 +924,7 @@ export default function SellPage() {
               : 'rounded-xl bg-surface border border-border shadow-sm overflow-hidden paper-texture'
             }>
               {/* Cart lines */}
-              <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto p-4 lg:p-5' : 'p-4 border-b border-border'}>
+              <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto p-4 pb-6 lg:p-5 lg:pb-8' : 'p-4 border-b border-border'}>
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-display text-xl flex items-center gap-2">
                     <Icon name="shopping_cart" size={22} /> Cart
