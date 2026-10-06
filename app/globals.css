@@ -31,6 +31,13 @@
   --color-side-muted: #B9AA8A;
   --color-side-accent: #D9B15A;
 
+  /* Parchment & Ink deepening */
+  --color-olive: #5B6236;
+  --color-olive-bg: #E8EBD8;
+  --color-terracotta: #C05621;
+  --color-brass: #A67C2E;
+  --color-paper-deep: #EFE6D0;
+
   --font-display: "Fraunces", Georgia, serif;
   --font-sans: "Source Sans 3", system-ui, sans-serif;
 }
@@ -56,6 +63,14 @@
   --side-text: #E9DFC9;
   --side-muted: #B9AA8A;
   --side-accent: #D9B15A;
+
+  /* Parchment & Ink deepening */
+  --olive: #5B6236;
+  --olive-bg: #E8EBD8;
+  --terracotta: #C05621;
+  --brass: #A67C2E;
+  --paper-deep: #EFE6D0;
+
   --radius: 10px;
   --radius-sm: 6px;
   --shadow: 0 1px 2px rgba(27,36,48,.06), 0 4px 14px rgba(27,36,48,.06);
@@ -126,7 +141,104 @@ body {
   html { scroll-behavior: auto; }
 }
 
-/* ── Bubbly landing — pure CSS entrance animations (work with zero JS) ── */
+/* ═══════════════════════════════════════════════════════════════
+   PARCHMENT & INK — motif classes
+   Book spines, chapter headers, paper texture, stamp badges.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Book-spine cards: 3px left rule in an accent color */
+.spine-card {
+  position: relative;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.spine-card::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--spine, var(--wine));
+}
+.spine-wine   { --spine: var(--wine); }
+.spine-gold   { --spine: var(--gold); }
+.spine-olive  { --spine: var(--olive); }
+.spine-slate  { --spine: #5B6472; }
+.spine-brass  { --spine: var(--brass); }
+.spine-terracotta { --spine: var(--terracotta); }
+
+/* Chapter headers: small-caps eyebrow + Fraunces heading + hairline rule */
+.chapter-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wine);
+}
+.chapter-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.25rem;
+  line-height: 1.3;
+  color: var(--ink);
+  margin-top: 2px;
+}
+.chapter-rule {
+  margin-top: 10px;
+  height: 1px;
+  background: linear-gradient(to right, var(--border-input), var(--border), transparent);
+}
+.chapter-number {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--gold);
+  margin-right: 8px;
+}
+
+/* Paper texture for empty states — subtle radial grain */
+.paper-texture {
+  background:
+    radial-gradient(ellipse at 20% 10%, rgba(184,146,63,0.07), transparent 55%),
+    radial-gradient(ellipse at 85% 90%, rgba(107,35,56,0.05), transparent 50%),
+    var(--surface);
+}
+
+/* Stamp badges: uppercase, letter-spaced, ledger-stamp feel */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.stamp-wine   { color: var(--wine); background: var(--wine-tint); }
+.stamp-gold   { color: var(--warning); background: var(--warning-bg); }
+.stamp-olive  { color: var(--olive); background: var(--olive-bg); }
+.stamp-slate  { color: var(--ink-muted); background: var(--surface-alt); }
+.stamp-danger { color: var(--danger); background: var(--danger-bg); }
+.stamp-brass  { color: var(--brass); background: #F3EAD3; }
+
+/* Ledger rules for money/stock tables */
+.ledger-row {
+  border-bottom: 1px solid var(--border);
+}
+.ledger-row:last-child { border-bottom: none; }
+
+/* Dashed receipt rules */
+.receipt-dash {
+  border-top: 2px dashed var(--border-input);
+}
+
+/* Bubbly landing — pure CSS entrance animations (work with zero JS) — */
 @keyframes bubbly-rise {
   from { opacity: 0; transform: translateY(26px); }
   to { opacity: 1; transform: translateY(0); }

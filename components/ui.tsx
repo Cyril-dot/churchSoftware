@@ -375,7 +375,7 @@ export function EmptyState({
   return (
     <motion.div
       variants={riseVariants}
-      className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[var(--border-input)] bg-[var(--surface)] px-6 py-14 text-center"
+      className="paper-texture flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[var(--border-input)] px-6 py-14 text-center"
     >
       <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--surface-alt)] text-[var(--ink-muted)]">
         <Icon name={icon} size={30} />
@@ -475,6 +475,177 @@ export function StatCard({
       <p className="mt-1.5 text-sm font-semibold text-[var(--ink-muted)]">{label}</p>
       {sub && <p className="mt-0.5 text-xs text-[var(--ink-muted)]">{sub}</p>}
     </motion.div>
+  );
+}
+
+/* ═══════════════════════════ Parchment & Ink components ═══════════════════════════ */
+
+/**
+ * ChapterHeader — small-caps eyebrow + Fraunces heading + hairline rule.
+ * Use for page sections ("Chapter One — Today's trade").
+ */
+export function ChapterHeader({
+  eyebrow,
+  title,
+  number,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  number?: number | string;
+  action?: ReactNode;
+}) {
+  return (
+    <motion.div variants={riseVariants} className="mb-4">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="chapter-eyebrow">{eyebrow}</p>
+          <h2 className="chapter-title">
+            {number != null && <span className="chapter-number">{number}.</span>}
+            {title}
+          </h2>
+        </div>
+        {action}
+      </div>
+      <div className="chapter-rule" aria-hidden="true" />
+    </motion.div>
+  );
+}
+
+/* Stamp-like status badges — RECEIVED, BANKED, LOW, OUT, PENDING… */
+type StampTone = 'wine' | 'gold' | 'olive' | 'slate' | 'danger' | 'brass';
+
+const STAMP_CLASSES: Record<StampTone, string> = {
+  wine: 'stamp stamp-wine',
+  gold: 'stamp stamp-gold',
+  olive: 'stamp stamp-olive',
+  slate: 'stamp stamp-slate',
+  danger: 'stamp stamp-danger',
+  brass: 'stamp stamp-brass',
+};
+
+export function StampBadge({ tone = 'slate', children }: { tone?: StampTone; children: ReactNode }) {
+  return <span className={STAMP_CLASSES[tone]}>{children}</span>;
+}
+
+/**
+ * SpineCard — card with a 3px book-spine accent rule on the left.
+ * tone picks the spine color: wine | gold | olive | slate | brass | terracotta
+ */
+export function SpineCard({
+  tone = 'wine',
+  children,
+  className = '',
+}: {
+  tone?: 'wine' | 'gold' | 'olive' | 'slate' | 'brass' | 'terracotta';
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <motion.div variants={riseVariants} className={`spine-card spine-${tone} p-5 ${className}`}>
+      {children}
+    </motion.div>
+  );
+}
+
+/**
+ * KpiCard — dashboard KPI with accent spine, tabular numerals,
+ * and an optional delta vs a previous period.
+ */
+export function KpiCard({
+  icon,
+  label,
+  value,
+  delta,
+  deltaUp,
+  tone = 'wine',
+}: {
+  icon: string;
+  label: string;
+  value: ReactNode;
+  delta?: string;
+  deltaUp?: boolean | null;
+  tone?: 'wine' | 'gold' | 'olive' | 'slate';
+}) {
+  const toneIcon =
+    tone === 'wine'
+      ? 'bg-[var(--wine-tint)] text-[var(--wine)]'
+      : tone === 'gold'
+        ? 'bg-[var(--warning-bg)] text-[var(--warning)]'
+        : tone === 'olive'
+          ? 'bg-[var(--olive-bg)] text-[var(--olive)]'
+          : 'bg-[var(--surface-alt)] text-[var(--ink-muted)]';
+  return (
+    <motion.div variants={riseVariants} className={`spine-card spine-${tone} p-4 sm:p-5`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${toneIcon}`}>
+          <Icon name={icon} size={22} />
+        </span>
+        {delta && deltaUp != null && (
+          <span
+            className={`tnum inline-flex items-center gap-1 text-[12px] font-bold ${
+              deltaUp ? 'text-[var(--olive)]' : 'text-[var(--danger)]'
+            }`}
+          >
+            <Icon name={deltaUp ? 'trending_up' : 'trending_down'} size={16} />
+            {delta}
+          </span>
+        )}
+      </div>
+      <p className="tnum font-display mt-3 text-[26px] leading-none text-[var(--ink)] sm:text-[30px]">
+        {value}
+      </p>
+      <p className="mt-1.5 text-[13px] font-semibold text-[var(--ink-muted)]">{label}</p>
+    </motion.div>
+  );
+}
+
+/**
+ * AttentionPanel — "Needs attention" list with icon, label, count,
+ * and a cross-link to the fixing page (Planning Center lesson).
+ */
+export function AttentionPanel({
+  items,
+}: {
+  items: { icon: string; label: string; detail?: string; href: string; tone?: StampTone }[];
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="paper-texture flex flex-col items-center gap-2 rounded-2xl border border-[var(--border)] px-6 py-10 text-center">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--olive-bg)] text-[var(--olive)]">
+          <Icon name="check_circle" size={28} />
+        </span>
+        <p className="font-display text-lg text-[var(--ink)]">All clear</p>
+        <p className="text-sm text-[var(--ink-muted)]">Nothing needs your attention right now.</p>
+      </div>
+    );
+  }
+  return (
+    <ul className="flex flex-col gap-2">
+      {items.map((it) => (
+        <li key={it.label}>
+          <a
+            href={it.href}
+            className="group flex min-h-[56px] items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 transition hover:border-[var(--wine)]/50 hover:shadow-[var(--shadow)] active:scale-[0.99]"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--warning-bg)] text-[var(--warning)]">
+              <Icon name={it.icon} size={22} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] font-bold text-[var(--ink)]">{it.label}</span>
+              {it.detail && (
+                <span className="block truncate text-[13px] text-[var(--ink-muted)]">{it.detail}</span>
+              )}
+            </span>
+            <Icon
+              name="arrow_forward"
+              size={20}
+              className="shrink-0 text-[var(--ink-muted)] transition group-hover:translate-x-0.5 group-hover:text-[var(--wine)]"
+            />
+          </a>
+        </li>
+      ))}
+    </ul>
   );
 }
 
