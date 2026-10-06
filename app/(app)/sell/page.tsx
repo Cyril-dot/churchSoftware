@@ -6,6 +6,7 @@ import { Toaster, toast } from 'sonner';
 import Icon from '@/components/Icon';
 import { StampBadge } from '@/components/ui';
 import { formatMoney, parseMoney } from '@/lib/money';
+import { servedByLine } from '@/lib/cashier';
 
 /* ═══════════════════════ Types ═══════════════════════ */
 
@@ -14,6 +15,9 @@ interface ApiProduct {
   name: string;
   authorOrBrand?: string | null;
   sellingPrice: number;
+  priceBishop: number | null;
+  priceSonsOfProphet: number | null;
+  pricePastorDeji: number | null;
   quantityOnHand: number;
   quantityShop: number;
   sku?: string | null;
@@ -22,18 +26,67 @@ interface ApiProduct {
   productType?: string | null;
 }
 
+type PriceTier = 'standard' | 'bishop' | 'sons_of_prophet' | 'pastor_deji';
+
 interface CartLine {
   productId: string;
   name: string;
   unitPrice: number;
   quantity: number;
   stock: number;
+  priceTier: PriceTier;
+}
+
+/* Price lists — Standard is the default; named tiers fall back to sellingPrice when unset. */
+
+/* Tier labels for receipt line stamps. */
+const POS_TIER_LABELS: Record<string, string> = {
+  bishop: 'Bishop',
+  sons_of_prophet: 'Sons of Prophet',
+  pastor_deji: 'Pastor Deji',
+};
+const PRICE_TIERS: { value: PriceTier; label: string; stamp: string }[] = [
+  { value: 'standard', label: 'Standard', stamp: 'STD' },
+  { value: 'bishop', label: 'Bishop', stamp: 'BISHOP' },
+  { value: 'sons_of_prophet', label: 'Sons of Prophet', stamp: 'SONS OF PROPHET' },
+  { value: 'pastor_deji', label: 'Pastor Deji', stamp: 'PASTOR DEJI' },
+];
+
+const TIER_STAMP: Record<PriceTier, string> = Object.fromEntries(
+  PRICE_TIERS.map((t) => [t.value, t.stamp])
+) as Record<PriceTier, string>;
+
+function isPriceTier(v: unknown): v is PriceTier {
+  return PRICE_TIERS.some((t) => t.value === v);
+}
+
+/** Composite identity of a cart line: same product under a different tier is a separate line. */
+function lineKey(productId: string, tier: PriceTier): string {
+  return `${productId}|${tier}`;
+}
+
+/** Price for a product under the given tier — silently falls back to sellingPrice when unset/blank. */
+function priceForTier(p: ApiProduct, tier: PriceTier): number {
+  const t =
+    tier === 'bishop' ? p.priceBishop
+    : tier === 'sons_of_prophet' ? p.priceSonsOfProphet
+    : tier === 'pastor_deji' ? p.pricePastorDeji
+    : null;
+  return t ?? p.sellingPrice;
+}
+
+/** Blank/empty/non-finite/negative tier values count as "not set". */
+function numOrNull(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 interface ReceiptItem {
   name: string;
   quantity: number;
   unit_price: number;
+  price_tier?: string;
 }
 
 interface SaleReceipt {
@@ -48,6 +101,37 @@ interface SaleReceipt {
   amount_tendered: number | null;
   payment_method: string;
   payment_reference: string | null;
+}
+
+/* Normalize the checkout response into the snake_case SaleReceipt shape.
+   Demo mode returns { receipt } (snake_case); the real API returns
+   getReceipt's { sale, items, settings } (camelCase). */
+function normalizeReceipt(raw: unknown): SaleReceipt | null {
+  const r = raw as Record<string, any> | null;
+  if (!r) return null;
+  if (r.receipt) return r.receipt as SaleReceipt;
+  if (r.sale) {
+    const s = r.sale as Record<string, any>;
+    return {
+      id: s.id,
+      receipt_number: s.receiptNumber,
+      sold_at: s.soldAt,
+      cashier_name: s.soldByName ?? '',
+      items: ((r.items as any[]) ?? []).map((i) => ({
+        name: i.productName,
+        quantity: i.quantity,
+        unit_price: i.unitPrice,
+        price_tier: i.priceTier ?? 'standard',
+      })),
+      subtotal: s.subtotal ?? 0,
+      discount: s.discount ?? 0,
+      total: s.total ?? 0,
+      amount_tendered: s.amountTendered ?? null,
+      payment_method: s.paymentMethod ?? '',
+      payment_reference: s.paymentReference ?? null,
+    };
+  }
+  return r as SaleReceipt;
 }
 
 type PaymentMethod = 'cash' | 'card' | 'mobile_money' | 'bank_transfer';
@@ -92,7 +176,28 @@ function loadCart(): CartLine[] {
     const raw = localStorage.getItem(CART_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    /* Normalize legacy carts (no priceTier) and merge any duplicate lines. */
+    const byKey = new Map<string, CartLine>();
+    for (const item of parsed) {
+      const tier: PriceTier = isPriceTier(item.priceTier) ? item.priceTier : 'standard';
+      const line: CartLine = {
+        productId: String(item.productId ?? ''),
+        name: String(item.name ?? 'Item'),
+        unitPrice: Number(item.unitPrice ?? 0),
+        quantity: Number(item.quantity ?? 1),
+        stock: Number(item.stock ?? 0),
+        priceTier: tier,
+      };
+      const key = lineKey(line.productId, tier);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.quantity += line.quantity;
+        continue;
+      }
+      byKey.set(key, line);
+    }
+    return [...byKey.values()];
   } catch {
     return [];
   }
@@ -114,6 +219,10 @@ async function apiGetProducts(search: string, signal: AbortSignal): Promise<ApiP
     name: String(p.name),
     authorOrBrand: (p.authorOrBrand ?? p.author_or_brand ?? null) as string | null,
     sellingPrice: Number(p.sellingPrice ?? p.selling_price ?? 0),
+    /* Tier prices come back camelCase from the API, snake_case in demo mode. */
+    priceBishop: numOrNull(p.priceBishop ?? p.price_bishop),
+    priceSonsOfProphet: numOrNull(p.priceSonsOfProphet ?? p.price_sons_of_prophet),
+    pricePastorDeji: numOrNull(p.pricePastorDeji ?? p.price_pastor_deji),
     quantityOnHand: Number(p.quantityOnHand ?? p.quantity_on_hand ?? 0),
     quantityShop: Number(p.quantityShop ?? p.quantity_shop ?? p.quantityOnHand ?? p.quantity_on_hand ?? 0),
     sku: (p.sku ?? null) as string | null,
@@ -194,6 +303,8 @@ export default function SellPage() {
     if (typeof window === 'undefined') return [];
     return loadCart();
   });
+  /* Active price list — applies to newly-added items only; existing lines keep their tier. */
+  const [priceTier, setPriceTier] = useState<PriceTier>('standard');
   const [discountMode, setDiscountMode] = useState<DiscountMode>('amount');
   const [discountValue, setDiscountValue] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
@@ -208,6 +319,18 @@ export default function SellPage() {
   const [mobileTab, setMobileTab] = useState<'browse' | 'cart'>('browse');
   const [checkingOut, setCheckingOut] = useState(false);
   const [receipt, setReceipt] = useState<SaleReceipt | null>(null);
+  /* Current cashier (for the "Served by" line on the receipt) */
+  const [cashier, setCashier] = useState<{ name: string; id: string } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/v1/auth/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        const u = body?.data;
+        if (u?.name) setCashier({ name: String(u.name), id: u.id != null ? String(u.id) : '' });
+      })
+      .catch(() => { /* offline — ReceiptBody falls back to the sale record's cashier_name */ });
+  }, []);
   const [flyDots, setFlyDots] = useState<{ id: number; fromX: number; fromY: number; toX: number; toY: number }[]>([]);
   const [cartBump, setCartBump] = useState(0);
   const idempotencyRef = useRef<string | null>(null);
@@ -300,16 +423,20 @@ export default function SellPage() {
       toast.error(`"${p.name}" is out of stock.`);
       return;
     }
+    /* Price is locked to the active tier at add time — later tier switches don't reprice lines. */
+    const tier = priceTier;
+    const unitPrice = priceForTier(p, tier);
+    const key = lineKey(p.id, tier);
     setCart((prev) => {
-      const existing = prev.find((l) => l.productId === p.id);
+      const existing = prev.find((l) => lineKey(l.productId, l.priceTier) === key);
       if (existing) {
         if (existing.quantity >= p.quantityOnHand) {
           toast.warning(`Only ${p.quantityOnHand} left of "${p.name}".`);
           return prev;
         }
-        return prev.map((l) => l.productId === p.id ? { ...l, quantity: l.quantity + 1, stock: p.quantityOnHand } : l);
+        return prev.map((l) => lineKey(l.productId, l.priceTier) === key ? { ...l, quantity: l.quantity + 1, stock: p.quantityOnHand } : l);
       }
-      return [...prev, { productId: p.id, name: p.name, unitPrice: p.sellingPrice, quantity: 1, stock: p.quantityOnHand }];
+      return [...prev, { productId: p.id, name: p.name, unitPrice, quantity: 1, stock: p.quantityOnHand, priceTier: tier }];
     });
     /* fly-to-cart animation (target measured at tap time) */
     if (fromX != null && fromY != null && !reduceMotion) {
@@ -319,19 +446,19 @@ export default function SellPage() {
     } else {
       setCartBump((b) => b + 1);
     }
-  }, [reduceMotion, cartTargetPos]);
+  }, [reduceMotion, cartTargetPos, priceTier]);
 
   const finishFly = useCallback((id: number) => {
     setFlyDots((d) => d.filter((dot) => dot.id !== id));
     setCartBump((b) => b + 1);
   }, []);
 
-  const setQty = useCallback((productId: string, qty: number) => {
-    setCart((prev) => prev.map((l) => l.productId === productId ? { ...l, quantity: qty } : l));
+  const setQty = useCallback((key: string, qty: number) => {
+    setCart((prev) => prev.map((l) => lineKey(l.productId, l.priceTier) === key ? { ...l, quantity: qty } : l));
   }, []);
 
-  const removeLine = useCallback((productId: string) => {
-    setCart((prev) => prev.filter((l) => l.productId !== productId));
+  const removeLine = useCallback((key: string) => {
+    setCart((prev) => prev.filter((l) => lineKey(l.productId, l.priceTier) !== key));
   }, []);
 
   const clearCart = useCallback(() => {
@@ -374,7 +501,11 @@ export default function SellPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity })),
+          /* The sales API accepts productId + quantity + priceTier per line
+             (createSaleSchema in app/api/v1/sales/route.ts) and record_sale()
+             resolves the tier price server-side (same for demo mode in
+             lib/demo-api.ts). */
+          items: cart.map((l) => ({ productId: l.productId, quantity: l.quantity, priceTier: l.priceTier })),
           paymentMethod: paymentMethod,
           discount: Math.round(discountAmount * 100) / 100,
           amountTendered: paymentMethod === 'cash' ? Math.round(tenderedNum * 100) / 100 : undefined,
@@ -398,7 +529,11 @@ export default function SellPage() {
         }
         return;
       }
-      const receiptData = body?.data as SaleReceipt;
+      const receiptData = normalizeReceipt(body?.data);
+      if (!receiptData) {
+        toast.error('Sale recorded, but the receipt could not be read.');
+        return;
+      }
       setReceipt(receiptData);
       setCart([]);
       setDiscountValue('');
@@ -552,8 +687,31 @@ export default function SellPage() {
             })}
           </div>
 
-          {/*Mobile tabs */}          <div className="lg:hidden mt-3 grid grid-cols-2 gap-2 p-1 rounded-xl bg-surface-alt border border-border" role="tablist" aria-label="POS views">
-            {(['browse', 'cart'] as const).map((tab) => (
+          {/* Price list selector — tier applies to items added from now on */}
+          <div className="mt-3 flex items-center gap-2 flex-wrap" role="radiogroup" aria-label="Price list">
+            <span className="chapter-eyebrow mr-1 shrink-0">Price list</span>
+            {PRICE_TIERS.map((t) => {
+              const active = priceTier === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setPriceTier(t.value)}
+                  className={`min-h-[44px] px-4 rounded-full text-sm font-bold border-2 transition active:scale-95 ${
+                    active
+                      ? 'bg-wine border-wine text-white shadow-md'
+                      : 'bg-surface border-border text-ink hover:border-wine/60'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/*Mobile tabs */}          <div className="lg:hidden mt-3 grid grid-cols-2 gap-2 p-1 rounded-xl bg-surface-alt border border-border" role="tablist" aria-label="POS views">            {(['browse', 'cart'] as const).map((tab) => (
               <button
                 key={tab}
                 role="tab"
@@ -641,6 +799,8 @@ export default function SellPage() {
                 <AnimatePresence>
                   {visibleProducts.map((p, i) => {
                     const out = p.quantityOnHand <= 0;
+                    const tierPrice = priceForTier(p, priceTier);
+                    const tiered = priceTier !== 'standard' && tierPrice !== p.sellingPrice;
                     return (
                       <motion.li
                         key={p.id}
@@ -657,7 +817,7 @@ export default function SellPage() {
                           className={`w-full min-h-[44px] text-left rounded-xl bg-surface border border-border shadow-sm flex flex-col overflow-hidden transition active:scale-[0.97] ${
                             out ? 'opacity-60' : 'hover:border-wine/60 hover:shadow-md'
                           }`}
-                          aria-label={`Add ${p.name} to cart, ${formatMoney(p.sellingPrice)}`}
+                          aria-label={`Add ${p.name} to cart, ${formatMoney(tierPrice)}`}
                         >
                           {/* Cover — 3:4 shelf card with stock stamp overlaid */}
                           <div className="relative aspect-[3/4] bg-paper-deep shrink-0">
@@ -682,7 +842,21 @@ export default function SellPage() {
                               <p className="text-sm text-ink-muted truncate">{p.authorOrBrand}</p>
                             )}
                             <div className="mt-auto pt-2 flex items-center justify-between gap-2">
-                              <span className="font-display tnum text-xl font-bold text-wine">{formatMoney(p.sellingPrice)}</span>
+                              <div className="flex flex-col min-w-0">
+                                {priceTier !== 'standard' && (
+                                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted leading-tight">
+                                    {TIER_STAMP[priceTier]} price
+                                  </span>
+                                )}
+                                <span className="font-display tnum text-xl font-bold text-wine">
+                                  {formatMoney(tierPrice)}
+                                </span>
+                                {tiered && (
+                                  <span className="tnum text-xs text-ink-muted line-through">
+                                    {formatMoney(p.sellingPrice)}
+                                  </span>
+                                )}
+                              </div>
                               <span className={`w-10 h-10 rounded-full grid place-items-center shrink-0 ${out ? 'bg-surface-alt text-ink-muted' : 'bg-wine text-white shadow-md'}`}>
                                 <Icon name="add" size={22} />
                               </span>
@@ -736,7 +910,7 @@ export default function SellPage() {
                     <AnimatePresence initial={false}>
                       {cart.map((l) => (
                         <motion.li
-                          key={l.productId}
+                          key={lineKey(l.productId, l.priceTier)}
                           layout
                           initial={reduceMotion ? false : { opacity: 0, x: 24 }}
                           animate={{ opacity: 1, x: 0 }}
@@ -746,14 +920,19 @@ export default function SellPage() {
                         >
                           <div className="flex-1 min-w-0">
                             <p className="font-bold leading-tight truncate">{l.name}</p>
-                            <p className="tnum text-sm text-ink-muted">{formatMoney(l.unitPrice)} each</p>
+                            <p className="tnum text-sm text-ink-muted flex items-center gap-1.5 flex-wrap">
+                              {formatMoney(l.unitPrice)} each
+                              {l.priceTier !== 'standard' && (
+                                <StampBadge tone="gold">{TIER_STAMP[l.priceTier]}</StampBadge>
+                              )}
+                            </p>
                           </div>
-                          <Stepper value={l.quantity} max={l.stock} onChange={(v) => setQty(l.productId, v)} />
+                          <Stepper value={l.quantity} max={l.stock} onChange={(v) => setQty(lineKey(l.productId, l.priceTier), v)} />
                           <div className="w-20 text-right">
                             <p className="tnum font-bold">{formatMoney(l.unitPrice * l.quantity)}</p>
                           </div>
                           <button
-                            onClick={() => removeLine(l.productId)}
+                            onClick={() => removeLine(lineKey(l.productId, l.priceTier))}
                             aria-label={`Remove ${l.name}`}
                             className="w-11 h-11 rounded-full grid place-items-center text-ink-muted hover:text-danger hover:bg-danger-bg active:scale-90 transition shrink-0"
                           >
@@ -1011,7 +1190,7 @@ export default function SellPage() {
 
                 {/* Receipt preview — styled like a real paper slip */}
                 <div className="mx-4 mb-4 rounded-xl border border-border bg-[#FFFDF7] paper-texture p-5 max-h-72 overflow-y-auto shadow-inner">
-                  <ReceiptBody receipt={receipt} />
+                  <ReceiptBody receipt={receipt} cashierName={cashier?.name ?? null} cashierId={cashier?.id ?? null} />
                 </div>
 
                 <div className="p-4 pt-0 grid grid-cols-1 gap-2">
@@ -1038,7 +1217,7 @@ export default function SellPage() {
       {/* Print-only receipt — sibling of the overlay so print CSS can isolate it */}
       {receipt && (
         <div className="pos-print-only hidden bg-white text-black p-6 max-w-[80mm] mx-auto" aria-hidden="true">
-          <ReceiptBody receipt={receipt} print />
+          <ReceiptBody receipt={receipt} print cashierName={cashier?.name ?? null} cashierId={cashier?.id ?? null} />
         </div>
       )}
     </div>
@@ -1047,7 +1226,17 @@ export default function SellPage() {
 
 /* ═══════════════════════ Receipt ═══════════════════════ */
 
-function ReceiptBody({ receipt, print = false }: { receipt: SaleReceipt; print?: boolean }) {
+function ReceiptBody({
+  receipt,
+  print = false,
+  cashierName = null,
+  cashierId = null,
+}: {
+  receipt: SaleReceipt;
+  print?: boolean;
+  cashierName?: string | null;
+  cashierId?: string | null;
+}) {
   const change = receipt.amount_tendered != null ? receipt.amount_tendered - receipt.total : null;
   const soldAt = new Date(receipt.sold_at);
   const text = print ? 'text-black' : 'text-ink';
@@ -1060,7 +1249,9 @@ function ReceiptBody({ receipt, print = false }: { receipt: SaleReceipt; print?:
           {soldAt.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}{' '}
           {soldAt.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' })}
         </p>
-        <p className="text-xs opacity-70">Cashier: {receipt.cashier_name}</p>
+        <p className="mt-1 font-bold text-[15px] break-words">
+          {servedByLine(cashierName ?? receipt.cashier_name, cashierId)}
+        </p>
       </div>
       <div className="receipt-dash my-2" aria-hidden="true" />
       <ul className="space-y-1">
@@ -1069,6 +1260,11 @@ function ReceiptBody({ receipt, print = false }: { receipt: SaleReceipt; print?:
             <span className="flex-1">
               {it.name}
               <span className="tnum opacity-70"> × {it.quantity}</span>
+              {it.price_tier && it.price_tier !== 'standard' && (
+                <span className="ml-1 rounded border px-1 text-[10px] font-bold uppercase opacity-80">
+                  {POS_TIER_LABELS[it.price_tier] ?? it.price_tier}
+                </span>
+              )}
             </span>
             <span className="tnum font-semibold">{formatMoney(it.unit_price * it.quantity)}</span>
           </li>
