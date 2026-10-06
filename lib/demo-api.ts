@@ -2,7 +2,7 @@
 // This lets anyone preview and test the full app without a Neon database.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { DEMO_USERS, DEMO_PRODUCTS, DEMO_SALES, DEMO_SETTINGS, DEMO_CATEGORIES } from './demo-data';
+import { DEMO_USERS, DEMO_PRODUCTS, DEMO_SALES, DEMO_SETTINGS, DEMO_CATEGORIES, DEMO_SUPPLIERS, DEMO_DEPOSIT_ACCOUNTS } from './demo-data';
 
 const DEMO_COOKIE = 'bookshop_demo_session';
 
@@ -162,6 +162,58 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
   // ── Users (admin demo) ──
   if (path === '/api/v1/users' && method === 'GET') {
     return ok({ items: DEMO_USERS.map((u) => ({ ...u, active: true, last_login_at: new Date().toISOString() })) });
+  }
+
+  // ── Suppliers ──
+  if (path === '/api/v1/suppliers' && method === 'GET') {
+    return ok({ items: DEMO_SUPPLIERS.map((name, i) => ({ id: `sup-${i}`, name, active: true })) });
+  }
+
+  // ── Deposit accounts ──
+  if (path === '/api/v1/deposit-accounts' && method === 'GET') {
+    return ok({
+      items: DEMO_DEPOSIT_ACCOUNTS.map((a) => ({
+        ...a, active: true, totalDeposited: 1250 + Math.random() * 500,
+        depositCount: 3, lastDepositOn: new Date().toISOString().slice(0, 10),
+        createdAt: new Date().toISOString(),
+      })),
+    });
+  }
+  if (path === '/api/v1/deposits' && method === 'GET') {
+    return ok({ items: [], nextCursor: null });
+  }
+  if (path === '/api/v1/deposits' && method === 'POST') {
+    const body = await req.json().catch(() => ({}));
+    const acct = DEMO_DEPOSIT_ACCOUNTS.find((a) => a.id === body.depositAccountId);
+    return ok({
+      id: `dep-demo-${Date.now()}`,
+      referenceNumber: `D-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+      depositAccountId: body.depositAccountId,
+      depositAccountName: acct?.name ?? 'Account',
+      amount: body.amount ?? 0,
+      depositedOn: body.depositedOn ?? new Date().toISOString().slice(0, 10),
+      depositedBy: user.id,
+      depositedByName: user.name,
+      notes: body.notes ?? null,
+      createdAt: new Date().toISOString(),
+    }, 201);
+  }
+
+  // ── Product transfer (demo: in-memory) ──
+  const transferMatch = path.match(/^\/api\/v1\/products\/([^/]+)\/transfer$/);
+  if (transferMatch && method === 'POST') {
+    const body = await req.json().catch(() => ({}));
+    const p = DEMO_PRODUCTS.find((x) => x.id === transferMatch[1]);
+    if (!p) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }, { status: 404 });
+    const qty = body.quantity || 0;
+    const from = body.from === 'warehouse' ? 'quantity_warehouse' : 'quantity_shop';
+    const to = body.to === 'warehouse' ? 'quantity_warehouse' : 'quantity_shop';
+    if (p[from] < qty) {
+      return NextResponse.json({ error: { code: 'INSUFFICIENT_STOCK', message: 'Not enough stock.' } }, { status: 400 });
+    }
+    p[from] -= qty;
+    p[to] += qty;
+    return ok({ transferred: qty, from: body.from, to: body.to });
   }
 
   // Fallback: not implemented in demo

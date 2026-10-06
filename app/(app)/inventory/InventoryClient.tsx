@@ -34,11 +34,15 @@ interface Product {
   name: string;
   authorOrBrand: string | null;
   sku: string | null;
+  barcode: string | null;
+  coverPhotoUrl: string | null;
   productType: string;
   categoryId: string | null;
   categoryName: string | null;
   sellingPrice: number;
   quantityOnHand: number;
+  quantityShop: number;
+  quantityWarehouse: number;
   reorderLevel: number;
   active: boolean;
   createdAt: string;
@@ -73,7 +77,23 @@ interface Movement {
 
 type SortKey = 'name' | 'price' | 'stock';
 
-const PRODUCT_TYPES = ['book', 'stationery', 'gift', 'apparel', 'media', 'other'];
+const PRODUCT_TYPES = [
+  { value: 'bishop_books', label: 'Bishop Books' },
+  { value: 'other_authors', label: 'Other Authors' },
+  { value: 'bibles', label: 'Bibles' },
+  { value: 'children_books', label: 'Children Books' },
+  { value: 'children_bible', label: 'Children Bible' },
+  { value: 'stationery', label: 'Stationery' },
+  { value: 'gift', label: 'Gift' },
+  { value: 'apparel', label: 'Apparel' },
+  { value: 'media', label: 'Media' },
+  { value: 'other_items', label: 'Other Items' },
+];
+
+export function productTypeLabel(value: string): string {
+  return PRODUCT_TYPES.find((t) => t.value === value)?.label
+    ?? value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const MOVEMENT_TONES: Record<string, 'green' | 'red' | 'gold' | 'blue' | 'gray'> = {
   sale: 'red',
@@ -99,26 +119,32 @@ interface ItemFormState {
   name: string;
   authorOrBrand: string;
   sku: string;
+  barcode: string;
+  coverPhotoUrl: string;
   productType: string;
   categoryId: string;
   supplierId: string;
   costPrice: string;
   sellingPrice: string;
   reorderLevel: string;
-  quantityOnHand: string;
+  quantityShop: string;
+  quantityWarehouse: string;
 }
 
 const EMPTY_FORM: ItemFormState = {
   name: '',
   authorOrBrand: '',
   sku: '',
-  productType: 'book',
+  barcode: '',
+  coverPhotoUrl: '',
+  productType: 'bishop_books',
   categoryId: '',
   supplierId: '',
   costPrice: '',
   sellingPrice: '',
   reorderLevel: '0',
-  quantityOnHand: '0',
+  quantityShop: '0',
+  quantityWarehouse: '0',
 };
 
 function toForm(p: Product): ItemFormState {
@@ -126,13 +152,16 @@ function toForm(p: Product): ItemFormState {
     name: p.name,
     authorOrBrand: p.authorOrBrand ?? '',
     sku: p.sku ?? '',
+    barcode: p.barcode ?? '',
+    coverPhotoUrl: p.coverPhotoUrl ?? '',
     productType: p.productType,
     categoryId: p.categoryId ?? '',
     supplierId: p.supplierId ?? '',
     costPrice: String(p.costPrice ?? ''),
     sellingPrice: String(p.sellingPrice),
     reorderLevel: String(p.reorderLevel),
-    quantityOnHand: String(p.quantityOnHand),
+    quantityShop: String(p.quantityShop),
+    quantityWarehouse: String(p.quantityWarehouse),
   };
 }
 
@@ -174,6 +203,7 @@ function ItemActions({
   p,
   onMovements,
   onAdjust,
+  onTransfer,
   onEdit,
   onArchive,
   onRestore,
@@ -181,6 +211,7 @@ function ItemActions({
   p: Product;
   onMovements: (p: Product) => void;
   onAdjust: (p: Product) => void;
+  onTransfer: (p: Product) => void;
   onEdit: (p: Product) => void;
   onArchive: (p: Product) => void;
   onRestore: (p: Product) => void;
@@ -195,6 +226,15 @@ function ItemActions({
         className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
       >
         <Icon name="history" size={20} />
+      </button>
+      <button
+        type="button"
+        onClick={() => onTransfer(p)}
+        aria-label={`Move stock for ${p.name}`}
+        title="Move between shop & warehouse"
+        className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
+      >
+        <Icon name="swap_horiz" size={20} />
       </button>
       <button
         type="button"
@@ -274,6 +314,13 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
   const [adjustType, setAdjustType] = useState('adjustment');
   const [adjustNotes, setAdjustNotes] = useState('');
   const [adjustBusy, setAdjustBusy] = useState(false);
+
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<Product | null>(null);
+  const [transferQty, setTransferQty] = useState('');
+  const [transferFrom, setTransferFrom] = useState<'warehouse' | 'shop'>('warehouse');
+  const [transferNotes, setTransferNotes] = useState('');
+  const [transferBusy, setTransferBusy] = useState(false);
 
   const [archiveTarget, setArchiveTarget] = useState<Product | null>(null);
   const [restoreTarget, setRestoreTarget] = useState<Product | null>(null);
@@ -383,13 +430,20 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
         name: form.name.trim(),
         authorOrBrand: form.authorOrBrand.trim() || null,
         sku: form.sku.trim() || null,
+        barcode: form.barcode.trim() || null,
+        coverPhotoUrl: form.coverPhotoUrl || null,
         productType: form.productType,
         categoryId: form.categoryId || null,
         supplierId: form.supplierId || null,
         costPrice: Math.max(0, parseFloat(form.costPrice) || 0),
         sellingPrice: selling,
         reorderLevel: Math.max(0, parseInt(form.reorderLevel, 10) || 0),
-        ...(editing ? {} : { quantityOnHand: Math.max(0, parseInt(form.quantityOnHand, 10) || 0) }),
+        ...(editing
+          ? {}
+          : {
+              quantityShop: Math.max(0, parseInt(form.quantityShop, 10) || 0),
+              quantityWarehouse: Math.max(0, parseInt(form.quantityWarehouse, 10) || 0),
+            }),
       };
       if (editing) {
         await api(`/api/v1/products/${editing.id}`, {
@@ -407,6 +461,44 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
       setFormError(e instanceof Error ? e.message : 'Save failed.');
     } finally {
       setFormBusy(false);
+    }
+  };
+
+  /* ── Transfer stock (warehouse <-> shop) ── */
+  const openTransfer = (p: Product) => {
+    setTransferTarget(p);
+    setTransferQty('');
+    setTransferFrom(p.quantityWarehouse > 0 ? 'warehouse' : 'shop');
+    setTransferNotes('');
+    setTransferOpen(true);
+  };
+
+  const submitTransfer = async () => {
+    if (!transferTarget) return;
+    const qty = parseInt(transferQty, 10);
+    if (Number.isNaN(qty) || qty <= 0) {
+      toast.error('Enter a quantity to move.');
+      return;
+    }
+    const to = transferFrom === 'warehouse' ? 'shop' : 'warehouse';
+    setTransferBusy(true);
+    try {
+      await api(`/api/v1/products/${transferTarget.id}/transfer`, {
+        method: 'POST',
+        body: JSON.stringify({
+          quantity: qty,
+          from: transferFrom,
+          to,
+          notes: transferNotes.trim() || undefined,
+        }),
+      });
+      toast.success(`Moved ${qty} from ${transferFrom} to ${to}.`);
+      setTransferOpen(false);
+      fetchItems();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Transfer failed.');
+    } finally {
+      setTransferBusy(false);
     }
   };
 
@@ -504,7 +596,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
         p.name,
         p.sku ?? '',
         p.categoryName ?? '',
-        p.productType,
+        productTypeLabel(p.productType),
         canViewCost ? String(p.costPrice ?? '') : '',
         String(p.sellingPrice),
         String(p.quantityOnHand),
@@ -676,13 +768,14 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                     )}
                     <td className="tnum px-5 py-3.5 text-right font-bold">{formatMoney(p.sellingPrice)}</td>
                     <td className="px-5 py-3.5 text-right">
-                      <span className="tnum text-sm font-bold">{p.quantityOnHand}</span>
+                      <span className="tnum text-sm font-bold" title={`Shop: ${p.quantityShop}, Warehouse: ${p.quantityWarehouse}`}>{p.quantityOnHand}</span>
+                      <span className="tnum ml-1 text-[11px] text-[var(--ink-muted)]">({p.quantityShop}s · {p.quantityWarehouse}w)</span>
                       {isLow(p) && p.active && (
                         <span className="ml-2"><Badge tone="gold"><Icon name="warning" size={14} /> Low</Badge></span>
                       )}
                     </td>
                     <td className="px-5 py-3.5">
-                      <div className="flex justify-end"><ItemActions p={p} onMovements={openMovements} onAdjust={openAdjust} onEdit={openEdit} onArchive={setArchiveTarget} onRestore={setRestoreTarget} /></div>
+                      <div className="flex justify-end"><ItemActions p={p} onMovements={openMovements} onAdjust={openAdjust} onTransfer={openTransfer} onEdit={openEdit} onArchive={setArchiveTarget} onRestore={setRestoreTarget} /></div>
                     </td>
                   </tr>
                 ))}
@@ -720,10 +813,11 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                   <div className="text-right">
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">Stock</p>
                     <p className="tnum text-lg font-bold">{p.quantityOnHand}</p>
+                    <p className="tnum text-[11px] text-[var(--ink-muted)]">{p.quantityShop} shop · {p.quantityWarehouse} whse</p>
                   </div>
                 </div>
                 <div className="mt-2 flex justify-end border-t border-[var(--border)] pt-1">
-                  <ItemActions p={p} onMovements={openMovements} onAdjust={openAdjust} onEdit={openEdit} onArchive={setArchiveTarget} onRestore={setRestoreTarget} />
+                  <ItemActions p={p} onMovements={openMovements} onAdjust={openAdjust} onTransfer={openTransfer} onEdit={openEdit} onArchive={setArchiveTarget} onRestore={setRestoreTarget} />
                 </div>
               </motion.article>
             ))}
@@ -741,9 +835,57 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
               {formError}
             </p>
           )}
-          <Field label="Name" htmlFor="f-name">
-            <input id="f-name" className={inputClass} value={form.name} onChange={(e) => set('name')(e.target.value)} placeholder="Holy Bible — KJV" />
-          </Field>
+          <div className="flex gap-4">
+            <div className="min-w-0 flex-1">
+              <Field label="Name" htmlFor="f-name">
+                <input id="f-name" className={inputClass} value={form.name} onChange={(e) => set('name')(e.target.value)} placeholder="Holy Bible — KJV" />
+              </Field>
+            </div>
+            {/* Cover photo — passport-style, top right */}
+            <div className="shrink-0">
+              <span className="mb-1.5 block text-[13px] font-bold text-[var(--ink)]">Cover photo</span>
+              <label
+                htmlFor="f-photo"
+                className="relative grid h-28 w-24 cursor-pointer place-items-center overflow-hidden rounded-xl border-2 border-dashed border-[var(--border-input)] bg-[var(--surface-alt)] transition hover:border-[var(--wine)]"
+              >
+                {form.coverPhotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={form.coverPhotoUrl} alt="Cover preview" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex flex-col items-center gap-1 px-2 text-center">
+                    <Icon name="add_a_photo" size={24} className="text-[var(--ink-muted)]" />
+                    <span className="text-[11px] font-semibold leading-tight text-[var(--ink-muted)]">Tap to add photo</span>
+                  </span>
+                )}
+                <input
+                  id="f-photo"
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 800 * 1024) {
+                      setFormError('Photo must be under 800KB. Try a smaller image.');
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => setForm((f) => ({ ...f, coverPhotoUrl: String(reader.result ?? '') }));
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              {form.coverPhotoUrl && (
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, coverPhotoUrl: '' }))}
+                  className="mt-1 w-full text-center text-[12px] font-semibold text-[var(--danger)]"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
           <Field label="Author / brand" htmlFor="f-author">
             <input id="f-author" className={inputClass} value={form.authorOrBrand} onChange={(e) => set('authorOrBrand')(e.target.value)} placeholder="e.g. Thomas Nelson" />
           </Field>
@@ -751,10 +893,15 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
             <Field label="SKU" htmlFor="f-sku">
               <input id="f-sku" className={inputClass} value={form.sku} onChange={(e) => set('sku')(e.target.value)} placeholder="BK-001" />
             </Field>
+            <Field label="Barcode" htmlFor="f-barcode" hint="Scan or type the barcode for quick restocking.">
+              <input id="f-barcode" className={inputClass} value={form.barcode} onChange={(e) => set('barcode')(e.target.value)} placeholder="e.g. 9780310422353" inputMode="numeric" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <Field label="Type" htmlFor="f-type">
               <select id="f-type" className={inputClass} value={form.productType} onChange={(e) => set('productType')(e.target.value)}>
                 {PRODUCT_TYPES.map((t) => (
-                  <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>
+                  <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
             </Field>
@@ -792,15 +939,22 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
               <input id="f-reorder" className={inputClass} inputMode="numeric" value={form.reorderLevel} onChange={(e) => set('reorderLevel')(e.target.value)} />
             </Field>
             {editing ? (
-              <Field label="Quantity on hand">
-                <div className={`${inputClass} flex items-center bg-[var(--surface-alt)] font-bold`}>
-                  {editing.quantityOnHand}
+              <Field label="Stock (shop / warehouse)">
+                <div className={`${inputClass} flex items-center justify-center gap-2 bg-[var(--surface-alt)] font-bold tnum`}>
+                  <span>{editing.quantityShop} shop</span>
+                  <span className="text-[var(--ink-muted)]">·</span>
+                  <span>{editing.quantityWarehouse} whse</span>
                 </div>
               </Field>
             ) : (
-              <Field label="Opening stock" htmlFor="f-qty">
-                <input id="f-qty" className={inputClass} inputMode="numeric" value={form.quantityOnHand} onChange={(e) => set('quantityOnHand')(e.target.value)} />
-              </Field>
+              <>
+                <Field label="Opening stock — shop" htmlFor="f-qty-shop">
+                  <input id="f-qty-shop" className={inputClass} inputMode="numeric" value={form.quantityShop} onChange={(e) => set('quantityShop')(e.target.value)} placeholder="0" />
+                </Field>
+                <Field label="Opening stock — warehouse" htmlFor="f-qty-whse">
+                  <input id="f-qty-whse" className={inputClass} inputMode="numeric" value={form.quantityWarehouse} onChange={(e) => set('quantityWarehouse')(e.target.value)} placeholder="0" />
+                </Field>
+              </>
             )}
           </div>
           <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -868,6 +1022,71 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
             <SecondaryButton onClick={() => setAdjustOpen(false)} disabled={adjustBusy}>Cancel</SecondaryButton>
             <PrimaryButton onClick={submitAdjust} disabled={adjustBusy}>
               {adjustBusy ? 'Saving…' : 'Apply adjustment'}
+            </PrimaryButton>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Transfer stock dialog ── */}
+      <Modal open={transferOpen} onClose={() => setTransferOpen(false)} title={`Move stock — ${transferTarget?.name ?? ''}`}>
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl bg-[var(--surface-alt)] px-4 py-3 text-center">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--ink-muted)]">Shop</p>
+              <p className="tnum text-2xl font-bold">{transferTarget?.quantityShop ?? 0}</p>
+            </div>
+            <div className="rounded-xl bg-[var(--surface-alt)] px-4 py-3 text-center">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--ink-muted)]">Warehouse</p>
+              <p className="tnum text-2xl font-bold">{transferTarget?.quantityWarehouse ?? 0}</p>
+            </div>
+          </div>
+          <Field label="Move from" htmlFor="t-from">
+            <div className="grid grid-cols-2 gap-2">
+              {(['warehouse', 'shop'] as const).map((loc) => (
+                <button
+                  key={loc}
+                  type="button"
+                  onClick={() => setTransferFrom(loc)}
+                  aria-pressed={transferFrom === loc}
+                  className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border-2 font-bold capitalize transition active:scale-95 ${
+                    transferFrom === loc
+                      ? 'border-[var(--wine)] bg-[var(--wine)] text-white'
+                      : 'border-[var(--border)] bg-[var(--surface)] text-[var(--ink-muted)]'
+                  }`}
+                >
+                  <Icon name={loc === 'warehouse' ? 'warehouse' : 'storefront'} size={20} />
+                  {loc}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <p className="-mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-[var(--ink-muted)]">
+            <Icon name="arrow_downward" size={18} />
+            moving to {transferFrom === 'warehouse' ? 'shop' : 'warehouse'}
+          </p>
+          <Field label="Quantity to move" htmlFor="t-qty">
+            <input
+              id="t-qty"
+              className={inputClass}
+              inputMode="numeric"
+              value={transferQty}
+              onChange={(e) => setTransferQty(e.target.value)}
+              placeholder="e.g. 10"
+            />
+          </Field>
+          <Field label="Note (optional)" htmlFor="t-notes">
+            <input
+              id="t-notes"
+              className={inputClass}
+              value={transferNotes}
+              onChange={(e) => setTransferNotes(e.target.value)}
+              placeholder="e.g. Sunday restock"
+            />
+          </Field>
+          <div className="mt-1 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <SecondaryButton onClick={() => setTransferOpen(false)} disabled={transferBusy}>Cancel</SecondaryButton>
+            <PrimaryButton onClick={submitTransfer} disabled={transferBusy}>
+              {transferBusy ? 'Moving…' : `Move to ${transferFrom === 'warehouse' ? 'shop' : 'warehouse'}`}
             </PrimaryButton>
           </div>
         </div>
