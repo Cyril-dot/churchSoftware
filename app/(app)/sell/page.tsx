@@ -321,6 +321,10 @@ export default function SellPage() {
   const [receipt, setReceipt] = useState<SaleReceipt | null>(null);
   /* Till mode — POS takes over the whole screen (shell chrome hidden) */
   const [tillMode, setTillMode] = useState(false);
+  /* Cart takes half the screen when expanded */
+  const [cartWide, setCartWide] = useState(false);
+  /* Category tiles can be collapsed to free space */
+  const [showCategories, setShowCategories] = useState(true);
 
   useEffect(() => {
     document.documentElement.classList.toggle('till-mode', tillMode);
@@ -701,8 +705,22 @@ export default function SellPage() {
             </div>
           </div>
 
-          {/* Category tiles */}
-          <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5" role="group" aria-label="Filter by category">
+          {/* Category tiles — collapsible */}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="chapter-eyebrow shrink-0">Categories</span>
+            <button
+              type="button"
+              onClick={() => setShowCategories((v) => !v)}
+              aria-pressed={showCategories}
+              aria-expanded={showCategories}
+              className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-bold text-ink-muted hover:bg-surface-alt hover:text-ink transition"
+            >
+              <Icon name={showCategories ? 'expand_less' : 'expand_more'} size={18} />
+              {showCategories ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showCategories && (
+          <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-5" role="group" aria-label="Filter by category">
             {CATEGORY_TILES.map((t) => {
               const active = selectedType === t.value;
               return (
@@ -723,6 +741,7 @@ export default function SellPage() {
               );
             })}
           </div>
+          )}
 
           {/* Price list selector — tier applies to items added from now on */}
           <div className="mt-3 flex items-center gap-2 flex-wrap" role="radiogroup" aria-label="Price list">
@@ -792,8 +811,8 @@ export default function SellPage() {
         : 'pos-no-print max-w-7xl mx-auto px-4 py-4 pb-28 lg:pb-12'
       }>
         <div className={tillMode
-          ? 'h-full lg:grid lg:grid-cols-[minmax(0,1fr)_440px]'
-          : 'lg:grid lg:grid-cols-[1fr_380px] lg:gap-6 lg:items-start'
+          ? (cartWide ? 'h-full lg:grid lg:grid-cols-2' : 'h-full lg:grid lg:grid-cols-[minmax(0,1fr)_440px]')
+          : (cartWide ? 'lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start' : 'lg:grid lg:grid-cols-[1fr_380px] lg:gap-6 lg:items-start')
         }>
 
           {/* ── Product grid ── */}
@@ -930,7 +949,17 @@ export default function SellPage() {
                     <Icon name="shopping_cart" size={22} /> Cart
                     {cartCount > 0 && <span className="tnum text-sm font-sans font-bold bg-wine-tint text-wine rounded-full px-2.5 py-0.5">{cartCount}</span>}
                   </h2>
-                  {cart.length > 0 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCartWide((v) => !v)}
+                      aria-pressed={cartWide}
+                      title={cartWide ? 'Narrow cart' : 'Cart takes half the screen'}
+                      className="hidden lg:inline-flex h-11 w-11 items-center justify-center rounded-lg text-ink-muted hover:bg-surface-alt hover:text-ink active:scale-95 transition"
+                    >
+                      <Icon name={cartWide ? 'unfold_less' : 'unfold_more'} size={22} />
+                    </button>
+                    {cart.length > 0 && (
                     confirmClear ? (
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-danger">Clear cart?</span>
@@ -946,6 +975,7 @@ export default function SellPage() {
                       </button>
                     )
                   )}
+                  </div>
                 </div>
 
                 {cart.length === 0 ? (
