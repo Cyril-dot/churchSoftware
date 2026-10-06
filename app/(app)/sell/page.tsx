@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion, animate } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import Icon from '@/components/Icon';
+import { StampBadge } from '@/components/ui';
 import { formatMoney, parseMoney } from '@/lib/money';
 
 /* ═══════════════════════ Types ═══════════════════════ */
@@ -431,11 +432,17 @@ export default function SellPage() {
 
   /* ── render helpers ── */
   const stockBadge = (p: ApiProduct) => {
+    const inner = (icon: string, label: string) => (
+      <span className="inline-flex items-center gap-1">
+        <Icon name={icon} size={13} />
+        {label}
+      </span>
+    );
     if (p.quantityOnHand <= 0)
-      return <span className="inline-flex items-center gap-1 rounded-full bg-danger-bg text-danger text-xs font-semibold px-2.5 py-1"><Icon name="block" size={14} />Out</span>;
+      return <StampBadge tone="danger">{inner('block', 'OUT')}</StampBadge>;
     if (p.quantityOnHand <= LOW_STOCK_AT)
-      return <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg text-warning text-xs font-semibold px-2.5 py-1"><Icon name="warning" size={14} />{p.quantityOnHand} left</span>;
-    return <span className="inline-flex items-center gap-1 rounded-full bg-success-bg text-success text-xs font-semibold px-2.5 py-1"><Icon name="check_circle" size={14} />In stock</span>;
+      return <StampBadge tone="gold">{inner('warning', `${p.quantityOnHand} LEFT`)}</StampBadge>;
+    return <StampBadge tone="olive">{inner('check_circle', 'IN STOCK')}</StampBadge>;
   };
 
   const quickCash = (amount: number | 'exact') => {
@@ -532,10 +539,10 @@ export default function SellPage() {
                   type="button"
                   onClick={() => setSelectedType(active ? null : t.value)}
                   aria-pressed={active}
-                  className={`flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center font-bold transition active:scale-95 ${
+                  className={`flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center font-bold transition active:scale-95 ${t.bg} hover:brightness-95 ${
                     active
-                      ? 'bg-wine text-white shadow-lg ring-2 ring-wine ring-offset-2 ring-offset-background'
-                      : `${t.bg} hover:brightness-95`
+                      ? 'ring-[3px] ring-wine ring-offset-2 ring-offset-parchment shadow-md brightness-[0.93]'
+                      : ''
                   }`}
                 >
                   <Icon name={t.icon} size={22} />
@@ -647,37 +654,39 @@ export default function SellPage() {
                           type="button"
                           disabled={out}
                           onClick={(e) => addToCart(p, e.clientX, e.clientY)}
-                          className={`w-full min-h-[44px] text-left rounded-xl bg-surface border border-border p-3 shadow-sm flex flex-col gap-2 transition active:scale-[0.97] ${
+                          className={`w-full min-h-[44px] text-left rounded-xl bg-surface border border-border shadow-sm flex flex-col overflow-hidden transition active:scale-[0.97] ${
                             out ? 'opacity-60' : 'hover:border-wine/60 hover:shadow-md'
                           }`}
                           aria-label={`Add ${p.name} to cart, ${formatMoney(p.sellingPrice)}`}
                         >
-                          <div className="flex items-start justify-between gap-2">
+                          {/* Cover — 3:4 shelf card with stock stamp overlaid */}
+                          <div className="relative aspect-[3/4] bg-paper-deep shrink-0">
                             {p.coverPhotoUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={p.coverPhotoUrl}
                                 alt=""
-                                className="w-12 h-16 rounded-lg object-cover shrink-0 border border-border"
+                                className="absolute inset-0 w-full h-full object-cover"
+                                loading="lazy"
                               />
                             ) : (
-                              <div className="w-12 h-12 rounded-lg bg-wine-tint text-wine grid place-items-center shrink-0">
-                                <Icon name="menu_book" size={26} />
+                              <div className="absolute inset-0 grid place-items-center bg-wine-tint text-wine">
+                                <Icon name="menu_book" size={48} />
                               </div>
                             )}
-                            {stockBadge(p)}
+                            <div className="absolute top-2 right-2">{stockBadge(p)}</div>
                           </div>
-                          <div className="min-w-0">
-                            <p className="font-bold leading-tight line-clamp-2">{p.name}</p>
+                          <div className="p-3 flex flex-col gap-1 flex-1 min-w-0">
+                            <p className="font-semibold leading-tight line-clamp-2">{p.name}</p>
                             {p.authorOrBrand && (
                               <p className="text-sm text-ink-muted truncate">{p.authorOrBrand}</p>
                             )}
-                          </div>
-                          <div className="mt-auto flex items-center justify-between">
-                            <span className="tnum text-lg font-bold text-wine">{formatMoney(p.sellingPrice)}</span>
-                            <span className={`w-9 h-9 rounded-full grid place-items-center ${out ? 'bg-surface-alt text-ink-muted' : 'bg-wine text-white'}`}>
-                              <Icon name="add" size={20} />
-                            </span>
+                            <div className="mt-auto pt-2 flex items-center justify-between gap-2">
+                              <span className="font-display tnum text-xl font-bold text-wine">{formatMoney(p.sellingPrice)}</span>
+                              <span className={`w-10 h-10 rounded-full grid place-items-center shrink-0 ${out ? 'bg-surface-alt text-ink-muted' : 'bg-wine text-white shadow-md'}`}>
+                                <Icon name="add" size={22} />
+                              </span>
+                            </div>
                           </div>
                         </button>
                       </motion.li>
@@ -690,7 +699,7 @@ export default function SellPage() {
 
           {/* ── Cart panel (1/3) ── */}
           <aside aria-label="Cart and checkout" className={`${mobileTab === 'browse' ? 'hidden lg:block' : ''} lg:sticky lg:top-[190px]`}>
-            <div className="rounded-xl bg-surface border border-border shadow-sm overflow-hidden">
+            <div className="rounded-xl bg-surface border border-border shadow-sm overflow-hidden paper-texture">
               {/* Cart lines */}
               <div className="p-4 border-b border-border">
                 <div className="flex items-center justify-between mb-3">
@@ -723,7 +732,7 @@ export default function SellPage() {
                     <p className="text-sm">Tap a product to add it.</p>
                   </div>
                 ) : (
-                  <ul className="divide-y divide-border max-h-72 overflow-y-auto -mx-4 px-4">
+                  <ul className="max-h-72 overflow-y-auto -mx-4 px-4">
                     <AnimatePresence initial={false}>
                       {cart.map((l) => (
                         <motion.li
@@ -733,7 +742,7 @@ export default function SellPage() {
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -24, height: 0, marginTop: 0, marginBottom: 0 }}
                           transition={{ duration: 0.2 }}
-                          className="py-3 flex items-center gap-3 overflow-hidden"
+                          className="ledger-row py-3 flex items-center gap-3 overflow-hidden"
                         >
                           <div className="flex-1 min-w-0">
                             <p className="font-bold leading-tight truncate">{l.name}</p>
@@ -802,7 +811,7 @@ export default function SellPage() {
                 )}
                 <div className="flex justify-between items-baseline pt-1">
                   <span className="font-bold text-lg">Total</span>
-                  <AnimatedMoney value={total} className="text-[32px] leading-none font-bold text-wine" />
+                  <AnimatedMoney value={total} className="font-display text-[32px] leading-none font-bold text-wine" />
                 </div>
               </div>
 
@@ -811,7 +820,7 @@ export default function SellPage() {
                 <div className="p-4 space-y-4">
                   <div>
                     <p className="text-sm font-bold text-ink-muted mb-2 uppercase tracking-wide">Payment method</p>
-                    <div className="grid grid-cols-4 gap-1.5 p-1 rounded-xl bg-surface-alt border border-border" role="radiogroup" aria-label="Payment method">
+                    <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Payment method">
                       {PAYMENT_METHODS.map((m) => {
                         const active = paymentMethod === m.value;
                         return (
@@ -820,19 +829,14 @@ export default function SellPage() {
                             role="radio"
                             aria-checked={active}
                             onClick={() => setPaymentMethod(m.value)}
-                            className={`relative h-14 rounded-lg flex flex-col items-center justify-center gap-0.5 text-xs font-bold transition ${
-                              active ? 'text-white' : 'text-ink-muted hover:text-ink'
+                            className={`min-h-[64px] rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-bold border-2 transition active:scale-95 ${
+                              active
+                                ? 'bg-wine border-wine text-white shadow-md'
+                                : 'bg-surface border-border text-ink-muted hover:text-ink hover:border-border-input'
                             }`}
                           >
-                            {active && (
-                              <motion.span
-                                layoutId="pay-pill"
-                                className="absolute inset-0 rounded-lg bg-wine"
-                                transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                              />
-                            )}
-                            <span className="relative"><Icon name={m.icon} size={22} /></span>
-                            <span className="relative">{m.label}</span>
+                            <Icon name={m.icon} size={26} />
+                            <span>{m.label}</span>
                           </button>
                         );
                       })}
@@ -871,9 +875,9 @@ export default function SellPage() {
                               <button key={a} onClick={() => quickCash(a)} className="tnum h-12 rounded-lg bg-surface-alt border border-border text-sm font-bold active:scale-95 transition">₵{a}</button>
                             ))}
                           </div>
-                          <div className={`rounded-xl p-3 text-center ${change != null && change >= 0 ? 'bg-success-bg' : 'bg-surface-alt'}`}>
+                          <div className={`rounded-xl p-3 text-center ${change != null && change >= 0 ? 'bg-olive-bg' : 'bg-surface-alt'}`}>
                             <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Change due</p>
-                            <p className={`tnum text-4xl font-bold ${change != null && change >= 0 ? 'text-success' : 'text-ink-muted'}`}>
+                            <p className={`tnum text-4xl font-bold ${change != null && change >= 0 ? 'text-olive' : 'text-ink-muted'}`}>
                               {change == null ? '—' : formatMoney(Math.max(0, change))}
                             </p>
                             {change != null && change < 0 && (
@@ -1005,8 +1009,8 @@ export default function SellPage() {
                   <p className="tnum text-ink-muted font-semibold">{receipt.receipt_number}</p>
                 </div>
 
-                {/* Receipt preview */}
-                <div className="mx-4 mb-4 rounded-xl border border-border bg-surface-alt p-4 max-h-64 overflow-y-auto">
+                {/* Receipt preview — styled like a real paper slip */}
+                <div className="mx-4 mb-4 rounded-xl border border-border bg-[#FFFDF7] paper-texture p-5 max-h-72 overflow-y-auto shadow-inner">
                   <ReceiptBody receipt={receipt} />
                 </div>
 
@@ -1048,9 +1052,9 @@ function ReceiptBody({ receipt, print = false }: { receipt: SaleReceipt; print?:
   const soldAt = new Date(receipt.sold_at);
   const text = print ? 'text-black' : 'text-ink';
   return (
-    <div className={`${text} text-sm`}>
-      <div className="text-center mb-3">
-        <p className="font-display text-lg font-bold">Church Bookshop</p>
+    <div className={`${text} font-mono text-[13px] leading-relaxed`}>
+      <div className="text-center mb-2">
+        <p className="font-display text-xl font-bold">Church Bookshop</p>
         <p className="tnum font-bold">{receipt.receipt_number}</p>
         <p className="text-xs opacity-70">
           {soldAt.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}{' '}
@@ -1058,8 +1062,8 @@ function ReceiptBody({ receipt, print = false }: { receipt: SaleReceipt; print?:
         </p>
         <p className="text-xs opacity-70">Cashier: {receipt.cashier_name}</p>
       </div>
-      <div className="border-t border-dashed border-current opacity-40 my-2" />
-      <ul className="space-y-1.5">
+      <div className="receipt-dash my-2" aria-hidden="true" />
+      <ul className="space-y-1">
         {receipt.items.map((it, i) => (
           <li key={i} className="flex justify-between gap-2">
             <span className="flex-1">
@@ -1070,13 +1074,13 @@ function ReceiptBody({ receipt, print = false }: { receipt: SaleReceipt; print?:
           </li>
         ))}
       </ul>
-      <div className="border-t border-dashed border-current opacity-40 my-2" />
+      <div className="receipt-dash my-2" aria-hidden="true" />
       <dl className="space-y-1">
         <div className="flex justify-between"><dt className="opacity-70">Subtotal</dt><dd className="tnum">{formatMoney(receipt.subtotal)}</dd></div>
         {receipt.discount > 0 && (
           <div className="flex justify-between"><dt className="opacity-70">Discount</dt><dd className="tnum">−{formatMoney(receipt.discount)}</dd></div>
         )}
-        <div className="flex justify-between text-base font-bold"><dt>Total</dt><dd className="tnum">{formatMoney(receipt.total)}</dd></div>
+        <div className="flex justify-between text-base font-bold"><dt>TOTAL</dt><dd className="tnum">{formatMoney(receipt.total)}</dd></div>
         <div className="flex justify-between"><dt className="opacity-70">Paid via</dt><dd className="font-semibold">{PAYMENT_LABELS[receipt.payment_method as PaymentMethod] ?? receipt.payment_method}</dd></div>
         {receipt.amount_tendered != null && (
           <>
@@ -1088,7 +1092,7 @@ function ReceiptBody({ receipt, print = false }: { receipt: SaleReceipt; print?:
           <div className="flex justify-between"><dt className="opacity-70">Reference</dt><dd className="tnum break-all text-right">{receipt.payment_reference}</dd></div>
         )}
       </dl>
-      <div className="border-t border-dashed border-current opacity-40 my-2" />
+      <div className="receipt-dash my-2" aria-hidden="true" />
       <p className="text-center font-display italic">Thank you and God bless you.</p>
     </div>
   );

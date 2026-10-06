@@ -10,10 +10,12 @@ import {
   listVariants,
   riseVariants,
   PageHeader,
+  ChapterHeader,
+  StampBadge,
+  SpineCard,
   PrimaryButton,
   SecondaryButton,
   DangerButton,
-  Badge,
   Field,
   inputClass,
   Modal,
@@ -37,11 +39,17 @@ interface ShopUser {
   createdAt: string;
 }
 
-const ROLE_TONES: Record<string, 'wine' | 'blue' | 'green'> = {
+/* ADMIN → wine, MANAGER → brass, CASHIER → olive */
+const ROLE_STAMPS: Record<string, 'wine' | 'brass' | 'olive' | 'slate'> = {
   admin: 'wine',
-  manager: 'blue',
-  cashier: 'green',
+  manager: 'brass',
+  cashier: 'olive',
 };
+
+function spineTone(u: ShopUser): 'wine' | 'brass' | 'olive' | 'slate' {
+  if (!u.active) return 'slate';
+  return ROLE_STAMPS[u.role] ?? 'slate';
+}
 
 function initials(name: string): string {
   return name
@@ -200,78 +208,82 @@ export default function UsersClient({ user: me }: { user: SessionUser }) {
   };
 
   const Row = ({ u }: { u: ShopUser }) => (
-    <div className="flex flex-col gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow)] sm:flex-row sm:items-center">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-            u.active ? 'bg-[var(--wine-tint)] text-[var(--wine)]' : 'bg-[var(--surface-alt)] text-[var(--ink-muted)]'
-          }`}
-        >
-          {initials(u.name)}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate font-bold text-[var(--ink)]">
-            {u.name}
-            {u.id === me.id && (
-              <span className="ml-2"><Badge tone="wine">You</Badge></span>
-            )}
-          </p>
-          <p className="truncate text-sm text-[var(--ink-muted)]">{u.email}</p>
-          <p className="text-xs text-[var(--ink-muted)]">Last login: {lastLoginLabel(u.lastLoginAt)}</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <Badge tone={ROLE_TONES[u.role] ?? 'gray'}>{u.role}</Badge>
-        {u.active ? (
-          <Badge tone="green">Active</Badge>
-        ) : (
-          <Badge tone="red">Inactive</Badge>
-        )}
-        {u.mustChangePassword && <Badge tone="gold">Must change password</Badge>}
-      </div>
-      <div className="flex items-center gap-1 sm:justify-end">
-        <button
-          type="button"
-          onClick={() => openEdit(u)}
-          aria-label={`Edit role for ${u.name}`}
-          title="Edit role"
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
-        >
-          <Icon name="edit" size={20} />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setResetTarget(u);
-            setNewPassword('');
-          }}
-          aria-label={`Reset password for ${u.name}`}
-          title="Reset password"
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
-        >
-          <Icon name="key" size={20} />
-        </button>
-        {u.id === me.id ? (
-          <span className="flex h-11 items-center px-2 text-xs font-semibold text-[var(--ink-muted)]">
-            Current user
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setToggleTarget(u)}
-            aria-label={u.active ? `Deactivate ${u.name}` : `Reactivate ${u.name}`}
-            title={u.active ? 'Deactivate' : 'Reactivate'}
-            className={`flex h-11 w-11 items-center justify-center rounded-lg ${
+    <SpineCard tone={spineTone(u)} className={`p-4 sm:p-5 ${u.active ? '' : 'opacity-85'}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span
+            className={`font-display grid h-12 w-12 shrink-0 place-items-center rounded-full text-base font-bold ${
               u.active
-                ? 'text-[var(--ink-muted)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger)]'
-                : 'text-[var(--success)] hover:bg-[var(--success-bg)]'
+                ? 'bg-[var(--wine-tint)] text-[var(--wine)]'
+                : 'bg-[var(--surface-alt)] text-[var(--ink-muted)]'
             }`}
           >
-            <Icon name={u.active ? 'person_off' : 'person_add'} size={20} />
+            {initials(u.name)}
+          </span>
+          <div className="min-w-0">
+            <p className="font-display truncate text-[17px] font-semibold text-[var(--ink)]">
+              {u.name}
+              {u.id === me.id && (
+                <span className="ml-2 align-middle"><StampBadge tone="brass">You</StampBadge></span>
+              )}
+            </p>
+            <p className="truncate text-sm text-[var(--ink-muted)]">{u.email}</p>
+            <p className="text-xs text-[var(--ink-muted)]">Last login: {lastLoginLabel(u.lastLoginAt)}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StampBadge tone={ROLE_STAMPS[u.role] ?? 'slate'}>{u.role}</StampBadge>
+          {u.active ? (
+            <StampBadge tone="olive">Active</StampBadge>
+          ) : (
+            <StampBadge tone="slate">Inactive</StampBadge>
+          )}
+          {u.mustChangePassword && <StampBadge tone="gold">Must change password</StampBadge>}
+        </div>
+        <div className="flex items-center gap-1 sm:justify-end">
+          <button
+            type="button"
+            onClick={() => openEdit(u)}
+            aria-label={`Edit role for ${u.name}`}
+            title="Edit role"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
+          >
+            <Icon name="edit" size={20} />
           </button>
-        )}
+          <button
+            type="button"
+            onClick={() => {
+              setResetTarget(u);
+              setNewPassword('');
+            }}
+            aria-label={`Reset password for ${u.name}`}
+            title="Reset password"
+            className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
+          >
+            <Icon name="key" size={20} />
+          </button>
+          {u.id === me.id ? (
+            <span className="flex h-11 items-center px-2 text-xs font-semibold text-[var(--ink-muted)]">
+              Current user
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setToggleTarget(u)}
+              aria-label={u.active ? `Deactivate ${u.name}` : `Reactivate ${u.name}`}
+              title={u.active ? 'Deactivate' : 'Reactivate'}
+              className={`flex h-11 w-11 items-center justify-center rounded-lg ${
+                u.active
+                  ? 'text-[var(--ink-muted)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger)]'
+                  : 'text-[var(--success)] hover:bg-[var(--success-bg)]'
+              }`}
+            >
+              <Icon name={u.active ? 'person_off' : 'person_add'} size={20} />
+            </button>
+          )}
+        </div>
       </div>
-    </div>
+    </SpineCard>
   );
 
   return (
@@ -309,6 +321,10 @@ export default function UsersClient({ user: me }: { user: SessionUser }) {
 
       {/* ── Add / edit sheet ── */}
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={editing ? 'Edit user' : 'Add user'}>
+        <ChapterHeader
+          eyebrow="Staff accounts"
+          title={editing ? 'Change their role' : 'Add a new staff member'}
+        />
         <div className="flex flex-col gap-4">
           <Field label="Full name" htmlFor="u-name">
             <input
@@ -392,7 +408,8 @@ export default function UsersClient({ user: me }: { user: SessionUser }) {
       />
 
       {/* ── Reset password ── */}
-      <Modal open={!!resetTarget} onClose={() => setResetTarget(null)} title={`Reset password — ${resetTarget?.name ?? ''}`}>
+      <Modal open={!!resetTarget} onClose={() => setResetTarget(null)} title="Reset password">
+        <ChapterHeader eyebrow="Security" title={`New password for ${resetTarget?.name ?? ''}`} />
         <p className="text-[15px] text-[var(--ink-muted)]">
           Set a new temporary password. They will be asked to change it on next login.
         </p>
