@@ -111,7 +111,26 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
   if (path === '/api/v1/sales' && method === 'GET') {
     let sales = DEMO_SALES;
     if (user.role === 'cashier') sales = sales.filter((s) => s.sold_by === user.id);
-    return ok({ items: sales.slice(0, 50), nextCursor: null });
+    // Return camelCase to match the real API contract
+    const mapped = sales.slice(0, 50).map((s) => ({
+      id: s.id,
+      receiptNumber: s.receipt_number,
+      paymentMethod: s.payment_method,
+      subtotal: s.subtotal,
+      discount: s.discount,
+      total: s.total,
+      amountTendered: s.amount_tendered,
+      soldBy: s.sold_by,
+      cashierName: s.cashier_name,
+      soldAt: s.sold_at,
+      status: s.status,
+      items: s.items.map((i) => ({
+        name: i.name,
+        quantity: i.quantity,
+        unitPrice: i.unit_price,
+      })),
+    }));
+    return ok({ items: mapped, nextCursor: null });
   }
   if (path === '/api/v1/sales' && method === 'POST') {
     const body = await req.json().catch(() => ({}));
