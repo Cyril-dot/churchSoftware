@@ -12,10 +12,10 @@ import {
   useDebounce,
   listVariants,
   riseVariants,
-  PageHeader,
+  ChapterHeader,
+  StampBadge,
   PrimaryButton,
   SecondaryButton,
-  Badge,
   Field,
   inputClass,
   Modal,
@@ -62,17 +62,23 @@ interface Supplier {
   name: string;
 }
 
+/* Matches the API payload shape (camelCase) from
+   GET /api/v1/products/:id/movements. */
 interface Movement {
   id: string;
-  movement_type: string;
-  quantity_change: number;
-  unit_cost: number | null;
-  reference_type: string | null;
-  reference_id: string | null;
+  movementType: string;
+  quantityChange: number;
+  unitCost: number | null;
+  referenceType: string | null;
+  referenceId: string | null;
   notes: string | null;
-  created_by: string | null;
-  created_by_name: string | null;
-  created_at: string;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+interface HistoryEntry extends Movement {
+  productName: string;
 }
 
 type SortKey = 'name' | 'price' | 'stock';
@@ -95,23 +101,42 @@ export function productTypeLabel(value: string): string {
     ?? value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const MOVEMENT_TONES: Record<string, 'green' | 'red' | 'gold' | 'blue' | 'gray'> = {
-  sale: 'red',
-  purchase: 'green',
-  adjustment: 'blue',
-  damage: 'red',
+type StampTone = 'wine' | 'gold' | 'olive' | 'slate' | 'danger' | 'brass';
+
+const MOVEMENT_TONES: Record<string, StampTone> = {
+  sale: 'danger',
+  purchase_receipt: 'olive',
+  transfer_in: 'olive',
+  transfer_out: 'gold',
+  adjustment: 'brass',
+  damage: 'danger',
   return: 'gold',
-  void: 'gold',
+  void: 'slate',
 };
 
 const MOVEMENT_LABELS: Record<string, string> = {
   sale: 'Sale',
-  purchase: 'Purchase',
+  purchase_receipt: 'Purchase',
+  transfer_in: 'Transfer in',
+  transfer_out: 'Transfer out',
   adjustment: 'Adjustment',
   damage: 'Damage',
   return: 'Return',
   void: 'Voided sale',
 };
+
+const SPINE_FOR_STAMP: Record<StampTone, string> = {
+  wine: 'spine-wine',
+  gold: 'spine-gold',
+  olive: 'spine-olive',
+  slate: 'spine-slate',
+  danger: 'spine-terracotta',
+  brass: 'spine-brass',
+};
+
+function movementLabel(t: string): string {
+  return MOVEMENT_LABELS[t] ?? t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 /* ═══════════════════════ Item form ═══════════════════════ */
 
@@ -165,6 +190,13 @@ function toForm(p: Product): ItemFormState {
   };
 }
 
+/* Margin % shown to managers/admins on the product card. */
+function marginPct(p: Product, canViewCost: boolean): number | null {
+  if (!canViewCost || p.sellingPrice <= 0) return null;
+  const cost = p.costPrice ?? 0;
+  return Math.round(((p.sellingPrice - cost) / p.sellingPrice) * 100);
+}
+
 /* ── Sort button (module scope: not recreated during render) ── */
 function SortButton({
   k,
@@ -183,7 +215,7 @@ function SortButton({
     <button
       type="button"
       onClick={() => onCycle(k)}
-      className={`inline-flex min-h-[44px] items-center gap-1 rounded-lg px-3 text-sm font-semibold transition ${
+      className={`inline-flex min-h-[44px] items-center gap-1 rounded-full px-3 text-sm font-semibold transition ${
         sortKey === k
           ? 'bg-[var(--wine-tint)] text-[var(--wine)]'
           : 'text-[var(--ink-muted)] hover:bg-[var(--surface-alt)]'
@@ -223,7 +255,7 @@ function ItemActions({
         onClick={() => onMovements(p)}
         aria-label={`Stock history for ${p.name}`}
         title="Stock history"
-        className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
+        className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--ink-muted)] transition hover:bg-[var(--wine-tint)] hover:text-[var(--wine)]"
       >
         <Icon name="history" size={20} />
       </button>
@@ -232,7 +264,7 @@ function ItemActions({
         onClick={() => onTransfer(p)}
         aria-label={`Move stock for ${p.name}`}
         title="Move between shop & warehouse"
-        className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
+        className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--ink-muted)] transition hover:bg-[var(--wine-tint)] hover:text-[var(--wine)]"
       >
         <Icon name="swap_horiz" size={20} />
       </button>
@@ -241,7 +273,7 @@ function ItemActions({
         onClick={() => onAdjust(p)}
         aria-label={`Adjust stock for ${p.name}`}
         title="Adjust stock"
-        className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
+        className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--ink-muted)] transition hover:bg-[var(--wine-tint)] hover:text-[var(--wine)]"
       >
         <Icon name="tune" size={20} />
       </button>
@@ -250,7 +282,7 @@ function ItemActions({
         onClick={() => onEdit(p)}
         aria-label={`Edit ${p.name}`}
         title="Edit"
-        className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--surface-alt)] hover:text-[var(--ink)]"
+        className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--ink-muted)] transition hover:bg-[var(--wine-tint)] hover:text-[var(--wine)]"
       >
         <Icon name="edit" size={20} />
       </button>
@@ -260,7 +292,7 @@ function ItemActions({
           onClick={() => onArchive(p)}
           aria-label={`Archive ${p.name}`}
           title="Archive"
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger)]"
+          className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--ink-muted)] transition hover:bg-[var(--danger-bg)] hover:text-[var(--danger)]"
         >
           <Icon name="archive" size={20} />
         </button>
@@ -270,7 +302,7 @@ function ItemActions({
           onClick={() => onRestore(p)}
           aria-label={`Restore ${p.name}`}
           title="Restore"
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--success)] hover:bg-[var(--success-bg)]"
+          className="flex h-11 w-11 items-center justify-center rounded-xl text-[var(--success)] transition hover:bg-[var(--success-bg)]"
         >
           <Icon name="unarchive" size={20} />
         </button>
@@ -279,14 +311,60 @@ function ItemActions({
   );
 }
 
+/* ── Ledger row for a single stock movement (drawer + history tab) ── */
+function MovementRow({ m, productName }: { m: Movement; productName?: string }) {
+  const tone = MOVEMENT_TONES[m.movementType] ?? 'slate';
+  const positive = m.quantityChange >= 0;
+  return (
+    <li className={`spine-card ${SPINE_FOR_STAMP[tone]} p-4`}>
+      <div className="flex items-start gap-3">
+        <span
+          className={`tnum shrink-0 pt-0.5 text-lg font-bold ${
+            positive ? 'text-[var(--olive)]' : 'text-[var(--danger)]'
+          }`}
+        >
+          {positive ? '+' : ''}{m.quantityChange}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <StampBadge tone={tone}>{movementLabel(m.movementType)}</StampBadge>
+            {productName && (
+              <span className="truncate text-sm font-bold text-[var(--ink)]">{productName}</span>
+            )}
+          </div>
+          {m.notes && <p className="mt-1.5 text-sm text-[var(--ink-muted)]">{m.notes}</p>}
+          <p className="mt-1 text-xs text-[var(--ink-muted)]">
+            {m.createdByName ?? 'System'} · {new Date(m.createdAt).toLocaleString('en-GH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+          </p>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/* ── Chapter tabs ── */
+const TABS = [
+  { id: 'products', chapter: 'One', label: 'Products', icon: 'inventory_2' },
+  { id: 'low', chapter: 'Two', label: 'Low stock', icon: 'warning' },
+  { id: 'history', chapter: 'Three', label: 'Stock history', icon: 'history' },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
+
 export default function InventoryClient({ user }: { user: SessionUser }) {
   const canViewCost = user.role !== 'cashier';
   const searchParams = useSearchParams();
 
+  /* Chapter tabs — the Low stock tab drives the same server-side
+     low-stock filter the old toggle used. */
+  const [activeTab, setActiveTab] = useState<TabId>(() =>
+    searchParams.get('filter') === 'low' ? 'low' : 'products'
+  );
+  const lowStockOnly = activeTab === 'low';
+
   /* Filters */
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [lowStockOnly, setLowStockOnly] = useState(() => searchParams.get('filter') === 'low');
   const [showArchived, setShowArchived] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -300,6 +378,10 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  /* Stock-history ledger (aggregated from the per-item movements endpoint) */
+  const [historyItems, setHistoryItems] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   /* Sheets / dialogs */
   const [formOpen, setFormOpen] = useState(false);
@@ -381,6 +463,36 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
       .catch(() => {});
   }, []);
 
+  /* ── Stock-history ledger: same per-item endpoint, merged newest-first ── */
+  useEffect(() => {
+    if (activeTab !== 'history') return;
+    if (items.length === 0) {
+      setHistoryItems([]);
+      return;
+    }
+    let cancelled = false;
+    setHistoryLoading(true);
+    const targets = items.slice(0, 30);
+    Promise.all(
+      targets.map((p) =>
+        api<{ items: Movement[] }>(`/api/v1/products/${p.id}/movements?limit=50`)
+          .then((d) => (d.items ?? []).map((m) => ({ ...m, productName: p.name })))
+          .catch(() => [] as HistoryEntry[])
+      )
+    ).then((lists) => {
+      if (cancelled) return;
+      const merged = lists
+        .flat()
+        .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+        .slice(0, 120);
+      setHistoryItems(merged);
+      setHistoryLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, items]);
+
   /* ── Sorting (client-side) ── */
   const sorted = useMemo(() => {
     const arr = [...items];
@@ -394,6 +506,11 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
   }, [items, sortKey, sortDir]);
 
   const isLow = (p: Product) => p.quantityOnHand <= p.reorderLevel;
+
+  /* Low-stock count for the tab badge: exact when the server filter is on,
+     page-local otherwise. */
+  const lowCount = lowStockOnly ? items.length : items.filter(isLow).length;
+  const lowCountSuffix = cursor ? '+' : '';
 
   /* ── Form actions ── */
   const openCreate = () => {
@@ -626,215 +743,320 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
     }
   };
 
+  /* Transfer movement preview (presentation only) */
+  const transferQtyNum = parseInt(transferQty, 10);
+  const transferQtyValid = !Number.isNaN(transferQtyNum) && transferQtyNum > 0;
+  const transferFromStock =
+    transferFrom === 'warehouse'
+      ? transferTarget?.quantityWarehouse ?? 0
+      : transferTarget?.quantityShop ?? 0;
+  const transferToStock =
+    transferFrom === 'warehouse'
+      ? transferTarget?.quantityShop ?? 0
+      : transferTarget?.quantityWarehouse ?? 0;
+  const transferTo = transferFrom === 'warehouse' ? 'shop' : 'warehouse';
+
+  /* Live margin preview in the pricing section */
+  const formSellNum = parseFloat(form.sellingPrice);
+  const formCostNum = parseFloat(form.costPrice);
+  const formMargin =
+    !Number.isNaN(formSellNum) && formSellNum > 0 && canViewCost
+      ? Math.round(((formSellNum - (Number.isNaN(formCostNum) ? 0 : formCostNum)) / formSellNum) * 100)
+      : null;
+
   return (
     <motion.div variants={listVariants} initial="hidden" animate="show">
-      <PageHeader
-        title="Items"
-        subtitle={`${items.length} item${items.length === 1 ? '' : 's'} in view`}
-        actions={
-          <>
+      <ChapterHeader
+        eyebrow="Stockroom"
+        title="Inventory"
+        action={
+          <div className="flex flex-col gap-2 sm:flex-row">
             <SecondaryButton onClick={exportCsv} disabled={items.length === 0}>
               <Icon name="download" size={20} /> Export CSV
             </SecondaryButton>
             <PrimaryButton onClick={openCreate}>
               <Icon name="add" size={20} /> Add item
             </PrimaryButton>
-          </>
+          </div>
         }
       />
 
-      {/* Filters */}
+      {/* ── Chapter tabs ── */}
       <motion.div
         variants={riseVariants}
-        className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow)]"
+        role="tablist"
+        aria-label="Inventory sections"
+        className="mb-5 grid grid-cols-3 gap-2"
       >
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
-            <Icon
-              name="search"
-              size={20}
-              className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--ink-muted)]"
-            />
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, SKU, author…"
-              aria-label="Search items"
-              className={`${inputClass} pl-11`}
-            />
-          </div>
-          <select
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            aria-label="Filter by category"
-            className={`${inputClass} lg:w-52`}
-          >
-            <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setLowStockOnly((v) => !v)}
-            aria-pressed={lowStockOnly}
-            className={`inline-flex min-h-[44px] items-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
-              lowStockOnly
-                ? 'border-[var(--warning)] bg-[var(--warning-bg)] text-[var(--warning)]'
-                : 'border-[var(--border-input)] text-[var(--ink-muted)] hover:bg-[var(--surface-alt)]'
-            }`}
-          >
-            <Icon name="warning" size={18} /> Low stock only
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowArchived((v) => !v)}
-            aria-pressed={showArchived}
-            className={`inline-flex min-h-[44px] items-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
-              showArchived
-                ? 'border-[var(--wine)] bg-[var(--wine-tint)] text-[var(--wine)]'
-                : 'border-[var(--border-input)] text-[var(--ink-muted)] hover:bg-[var(--surface-alt)]'
-            }`}
-          >
-            <Icon name="archive" size={18} /> Show archived
-          </button>
-          <div className="ml-auto flex items-center gap-1">
-            <span className="mr-1 text-xs font-semibold text-[var(--ink-muted)] uppercase tracking-wide">
-              Sort
-            </span>
-            <SortButton k="name" label="Name" sortKey={sortKey} sortDir={sortDir} onCycle={cycleSort} />
-            <SortButton k="price" label="Price" sortKey={sortKey} sortDir={sortDir} onCycle={cycleSort} />
-            <SortButton k="stock" label="Stock" sortKey={sortKey} sortDir={sortDir} onCycle={cycleSort} />
-          </div>
-        </div>
+        {TABS.map((t) => {
+          const selected = activeTab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => setActiveTab(t.id)}
+              className={`min-h-[68px] rounded-2xl border-2 px-2.5 py-2 text-left transition active:scale-[0.98] ${
+                selected
+                  ? 'border-[var(--wine)] bg-[var(--wine-tint)] shadow-[var(--shadow)]'
+                  : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--wine)]/40'
+              }`}
+            >
+              <span className="chapter-eyebrow block truncate text-[10px]">
+                Chapter {t.chapter}
+              </span>
+              <span className="mt-1 flex items-center gap-1.5">
+                <Icon
+                  name={t.icon}
+                  size={18}
+                  className={selected ? 'text-[var(--wine)]' : 'text-[var(--ink-muted)]'}
+                />
+                <span className="font-display truncate text-[16px] leading-tight text-[var(--ink)]">
+                  {t.label}
+                </span>
+              </span>
+              {t.id === 'low' && (
+                <span className="mt-1.5 block">
+                  <StampBadge tone="gold">
+                    <span className="tnum">
+                      {lowCount}
+                      {lowCountSuffix}
+                    </span>
+                  </StampBadge>
+                </span>
+              )}
+            </button>
+          );
+        })}
       </motion.div>
 
-      {/* Content */}
-      {loading ? (
-        <SkeletonRows rows={8} />
-      ) : error ? (
-        <ErrorState message={error} onRetry={() => fetchItems()} />
-      ) : sorted.length === 0 ? (
-        <EmptyState
-          icon="inventory_2"
-          title="No items found"
-          body={
-            search || categoryId || lowStockOnly
-              ? 'Try clearing your filters, or add a new item to get started.'
-              : 'Your catalogue is empty. Add your first item to start selling.'
-          }
-          action={<PrimaryButton onClick={openCreate}><Icon name="add" size={20} /> Add item</PrimaryButton>}
-        />
-      ) : (
+      {activeTab !== 'history' ? (
         <>
-          {/* Desktop table */}
-          <motion.div variants={riseVariants} className="hidden overflow-x-auto rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)] lg:block">
-            <table className="w-full min-w-[760px] text-left text-[15px]">
-              <thead>
-                <tr className="border-b border-[var(--border)] text-[13px] uppercase tracking-wide text-[var(--ink-muted)]">
-                  <th scope="col" className="px-5 py-3.5 font-semibold">Item</th>
-                  <th scope="col" className="px-5 py-3.5 font-semibold">SKU</th>
-                  <th scope="col" className="px-5 py-3.5 font-semibold">Category</th>
-                  {canViewCost && <th scope="col" className="px-5 py-3.5 text-right font-semibold">Cost</th>}
-                  <th scope="col" className="px-5 py-3.5 text-right font-semibold">Price</th>
-                  <th scope="col" className="px-5 py-3.5 text-right font-semibold">Stock</th>
-                  <th scope="col" className="px-5 py-3.5 text-right font-semibold"><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map((p) => (
-                  <tr
-                    key={p.id}
-                    className={`border-b border-[var(--border)] last:border-0 transition-colors hover:bg-[var(--surface-alt)] ${p.active ? '' : 'opacity-60'}`}
-                  >
-                    <td className="px-5 py-3.5">
-                      <p className="font-bold text-[var(--ink)]">{p.name}</p>
-                      {p.authorOrBrand && (
-                        <p className="text-xs text-[var(--ink-muted)]">{p.authorOrBrand}</p>
-                      )}
-                      {!p.active && <Badge tone="gray">Archived</Badge>}
-                    </td>
-                    <td className="px-5 py-3.5 text-sm text-[var(--ink-muted)]">{p.sku ?? '—'}</td>
-                    <td className="px-5 py-3.5 text-sm">{p.categoryName ?? '—'}</td>
-                    {canViewCost && (
-                      <td className="tnum px-5 py-3.5 text-right text-sm text-[var(--ink-muted)]">
-                        {formatMoney(p.costPrice ?? 0)}
-                      </td>
-                    )}
-                    <td className="tnum px-5 py-3.5 text-right font-bold">{formatMoney(p.sellingPrice)}</td>
-                    <td className="px-5 py-3.5 text-right">
-                      <span className="tnum text-sm font-bold" title={`Shop: ${p.quantityShop}, Warehouse: ${p.quantityWarehouse}`}>{p.quantityOnHand}</span>
-                      <span className="tnum ml-1 text-[11px] text-[var(--ink-muted)]">({p.quantityShop}s · {p.quantityWarehouse}w)</span>
-                      {isLow(p) && p.active && (
-                        <span className="ml-2"><Badge tone="gold"><Icon name="warning" size={14} /> Low</Badge></span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex justify-end"><ItemActions p={p} onMovements={openMovements} onAdjust={openAdjust} onTransfer={openTransfer} onEdit={openEdit} onArchive={setArchiveTarget} onRestore={setRestoreTarget} /></div>
-                    </td>
-                  </tr>
+          {/* Filters */}
+          <motion.div
+            variants={riseVariants}
+            className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow)]"
+          >
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="relative flex-1">
+                <Icon
+                  name="search"
+                  size={20}
+                  className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[var(--ink-muted)]"
+                />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, SKU, author…"
+                  aria-label="Search items"
+                  className={`${inputClass} pl-11`}
+                />
+              </div>
+              <select
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+                aria-label="Filter by category"
+                className={`${inputClass} lg:w-52`}
+              >
+                <option value="">All categories</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowArchived((v) => !v)}
+                aria-pressed={showArchived}
+                className={`inline-flex min-h-[44px] items-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+                  showArchived
+                    ? 'border-[var(--wine)] bg-[var(--wine-tint)] text-[var(--wine)]'
+                    : 'border-[var(--border-input)] text-[var(--ink-muted)] hover:bg-[var(--surface-alt)]'
+                }`}
+              >
+                <Icon name="archive" size={18} /> Show archived
+              </button>
+              <div className="ml-auto flex items-center gap-1">
+                <span className="mr-1 text-xs font-semibold text-[var(--ink-muted)] uppercase tracking-wide">
+                  Sort
+                </span>
+                <SortButton k="name" label="Name" sortKey={sortKey} sortDir={sortDir} onCycle={cycleSort} />
+                <SortButton k="price" label="Price" sortKey={sortKey} sortDir={sortDir} onCycle={cycleSort} />
+                <SortButton k="stock" label="Stock" sortKey={sortKey} sortDir={sortDir} onCycle={cycleSort} />
+              </div>
+            </div>
           </motion.div>
 
-          {/* Mobile cards */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:hidden">
-            {sorted.map((p, i) => (
-              <motion.article
-                key={p.id}
-                variants={riseVariants}
-                custom={i}
-                className={`rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow)] ${p.active ? '' : 'opacity-60'}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate font-bold text-[var(--ink)]">{p.name}</p>
-                    <p className="text-xs text-[var(--ink-muted)]">
-                      {p.sku ?? 'No SKU'}{p.categoryName ? ` · ${p.categoryName}` : ''}
-                    </p>
-                  </div>
-                  {isLow(p) && p.active ? (
-                    <Badge tone="gold"><Icon name="warning" size={14} /> Low</Badge>
-                  ) : !p.active ? (
-                    <Badge tone="gray">Archived</Badge>
-                  ) : null}
-                </div>
-                <div className="mt-3 flex items-end justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">Price</p>
-                    <p className="tnum text-lg font-bold">{formatMoney(p.sellingPrice)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">Stock</p>
-                    <p className="tnum text-lg font-bold">{p.quantityOnHand}</p>
-                    <p className="tnum text-[11px] text-[var(--ink-muted)]">{p.quantityShop} shop · {p.quantityWarehouse} whse</p>
-                  </div>
-                </div>
-                <div className="mt-2 flex justify-end border-t border-[var(--border)] pt-1">
-                  <ItemActions p={p} onMovements={openMovements} onAdjust={openAdjust} onTransfer={openTransfer} onEdit={openEdit} onArchive={setArchiveTarget} onRestore={setRestoreTarget} />
-                </div>
-              </motion.article>
-            ))}
-          </div>
+          {/* Content */}
+          {loading ? (
+            <SkeletonRows rows={8} />
+          ) : error ? (
+            <ErrorState message={error} onRetry={() => fetchItems()} />
+          ) : sorted.length === 0 ? (
+            <EmptyState
+              icon="inventory_2"
+              title={activeTab === 'low' ? 'No low-stock items' : 'No items found'}
+              body={
+                activeTab === 'low'
+                  ? 'Everything is above its reorder level. Nicely stocked.'
+                  : search || categoryId
+                    ? 'Try clearing your filters, or add a new item to get started.'
+                    : 'Your catalogue is empty. Add your first item to start selling.'
+              }
+              action={<PrimaryButton onClick={openCreate}><Icon name="add" size={20} /> Add item</PrimaryButton>}
+            />
+          ) : (
+            <>
+              <p className="tnum mb-3 text-xs font-semibold text-[var(--ink-muted)]">
+                {sorted.length} item{sorted.length === 1 ? '' : 's'} in view
+                {cursor ? ' — more below' : ''}
+              </p>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {sorted.map((p, i) => {
+                  const margin = marginPct(p, canViewCost);
+                  const out = p.quantityOnHand === 0;
+                  const low = isLow(p) && p.active && !out;
+                  const spine = !p.active ? 'spine-slate' : out ? 'spine-terracotta' : low ? 'spine-gold' : 'spine-wine';
+                  return (
+                    <motion.article
+                      key={p.id}
+                      variants={riseVariants}
+                      custom={i}
+                      className={`spine-card ${spine} p-4 ${p.active ? '' : 'opacity-60'}`}
+                    >
+                      <div className="flex gap-3">
+                        {/* Cover thumbnail */}
+                        <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--wine-tint)]">
+                          {p.coverPhotoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={p.coverPhotoUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <Icon name="inventory_2" size={28} className="text-[var(--wine)]/60" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="font-display text-[17px] leading-snug text-[var(--ink)]">
+                              {p.name}
+                            </p>
+                            {!p.active ? (
+                              <StampBadge tone="slate">Archived</StampBadge>
+                            ) : out ? (
+                              <StampBadge tone="danger">Out</StampBadge>
+                            ) : low ? (
+                              <StampBadge tone="gold">Low</StampBadge>
+                            ) : null}
+                          </div>
+                          <p className="mt-0.5 truncate font-mono text-xs text-[var(--ink-muted)]">
+                            {p.barcode ?? p.sku ?? 'No barcode'}
+                          </p>
+                          {p.authorOrBrand && (
+                            <p className="truncate text-xs text-[var(--ink-muted)]">{p.authorOrBrand}</p>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                            <StampBadge tone="slate">{productTypeLabel(p.productType)}</StampBadge>
+                            {margin != null && (
+                              <span className="tnum text-xs font-bold text-[var(--olive)]">
+                                {margin}% margin
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-end justify-between gap-3 border-t border-[var(--border)] pt-3">
+                        <div>
+                          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--ink-muted)]">
+                            Price
+                          </p>
+                          <p className="tnum text-lg font-bold text-[var(--ink)]">
+                            {formatMoney(p.sellingPrice)}
+                          </p>
+                          {canViewCost && (
+                            <p className="tnum text-xs text-[var(--ink-muted)]">
+                              Cost {formatMoney(p.costPrice ?? 0)}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[var(--ink-muted)]">
+                            In stock
+                          </p>
+                          <p className="tnum text-lg font-bold text-[var(--ink)]">
+                            {p.quantityOnHand}
+                          </p>
+                          <p className="mt-1 flex justify-end gap-1.5">
+                            <span className="tnum rounded-full bg-[var(--surface-alt)] px-2.5 py-1 text-[11px] font-bold text-[var(--ink-muted)]">
+                              {p.quantityShop} shop
+                            </span>
+                            <span className="tnum rounded-full bg-[var(--surface-alt)] px-2.5 py-1 text-[11px] font-bold text-[var(--ink-muted)]">
+                              {p.quantityWarehouse} whse
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-1 flex justify-end border-t border-[var(--border)] pt-1">
+                        <ItemActions
+                          p={p}
+                          onMovements={openMovements}
+                          onAdjust={openAdjust}
+                          onTransfer={openTransfer}
+                          onEdit={openEdit}
+                          onArchive={setArchiveTarget}
+                          onRestore={setRestoreTarget}
+                        />
+                      </div>
+                    </motion.article>
+                  );
+                })}
+              </div>
 
-          {cursor && <LoadMore onLoad={() => fetchItems(cursor)} loading={loadingMore} />}
+              {cursor && <LoadMore onLoad={() => fetchItems(cursor)} loading={loadingMore} />}
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {/* ── Chapter Three — Stock history ledger ── */}
+          <p className="mb-3 text-sm text-[var(--ink-muted)]">
+            Latest movements across the items in view, newest first.
+          </p>
+          {loading || historyLoading ? (
+            <SkeletonRows rows={6} />
+          ) : historyItems.length === 0 ? (
+            <EmptyState
+              icon="history"
+              title="No movements yet"
+              body="Stock changes, transfers, purchases and sales will appear here."
+            />
+          ) : (
+            <ul className="flex flex-col gap-2.5">
+              {historyItems.map((m) => (
+                <MovementRow key={m.id} m={m} productName={m.productName} />
+              ))}
+            </ul>
+          )}
         </>
       )}
 
       {/* ── Add / Edit sheet ── */}
       <Sheet open={formOpen} onClose={() => setFormOpen(false)} title={editing ? 'Edit item' : 'Add item'}>
+        <ChapterHeader
+          eyebrow={editing ? 'Update catalogue entry' : 'New catalogue entry'}
+          title={editing ? 'Edit item' : 'Add item'}
+        />
         <div className="flex flex-col gap-4">
           {formError && (
             <p role="alert" className="rounded-lg bg-[var(--danger-bg)] px-4 py-3 text-sm font-semibold text-[var(--danger)]">
               {formError}
             </p>
           )}
+
+          <p className="chapter-eyebrow">Identity</p>
           <div className="flex gap-4">
             <div className="min-w-0 flex-1">
               <Field label="Name" htmlFor="f-name">
@@ -879,7 +1101,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                 <button
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, coverPhotoUrl: '' }))}
-                  className="mt-1 w-full text-center text-[12px] font-semibold text-[var(--danger)]"
+                  className="mt-1 min-h-[44px] w-full text-center text-[12px] font-semibold text-[var(--danger)]"
                 >
                   Remove
                 </button>
@@ -905,8 +1127,6 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                 ))}
               </select>
             </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <Field label="Category" htmlFor="f-cat">
               <select id="f-cat" className={inputClass} value={form.categoryId} onChange={(e) => set('categoryId')(e.target.value)}>
                 <option value="">Uncategorized</option>
@@ -915,15 +1135,17 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                 ))}
               </select>
             </Field>
-            <Field label="Supplier" htmlFor="f-sup">
-              <select id="f-sup" className={inputClass} value={form.supplierId} onChange={(e) => set('supplierId')(e.target.value)}>
-                <option value="">None</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </Field>
           </div>
+          <Field label="Supplier" htmlFor="f-sup">
+            <select id="f-sup" className={inputClass} value={form.supplierId} onChange={(e) => set('supplierId')(e.target.value)}>
+              <option value="">None</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </Field>
+
+          <p className="chapter-eyebrow mt-2">Pricing</p>
           <div className="grid grid-cols-2 gap-4">
             {canViewCost ? (
               <Field label="Cost price" htmlFor="f-cost">
@@ -934,6 +1156,13 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
               <input id="f-price" className={inputClass} inputMode="decimal" value={form.sellingPrice} onChange={(e) => set('sellingPrice')(e.target.value)} placeholder="0.00" />
             </Field>
           </div>
+          {formMargin != null && (
+            <p className="tnum -mt-2 text-sm font-bold text-[var(--olive)]">
+              Margin ≈ {formMargin}%
+            </p>
+          )}
+
+          <p className="chapter-eyebrow mt-2">Stock</p>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Reorder level" htmlFor="f-reorder" hint="Low-stock alert at or below this quantity.">
               <input id="f-reorder" className={inputClass} inputMode="numeric" value={form.reorderLevel} onChange={(e) => set('reorderLevel')(e.target.value)} />
@@ -969,9 +1198,9 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
       {/* ── Adjust stock dialog ── */}
       <Modal open={adjustOpen} onClose={() => setAdjustOpen(false)} title={`Adjust stock — ${adjustTarget?.name ?? ''}`}>
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between rounded-xl bg-[var(--surface-alt)] px-4 py-3">
+          <div className="paper-texture flex items-center justify-between rounded-2xl border border-[var(--brass)]/40 px-4 py-3">
             <span className="text-sm font-semibold text-[var(--ink-muted)]">Current stock</span>
-            <span className="tnum text-xl font-bold">{adjustTarget?.quantityOnHand}</span>
+            <span className="tnum text-xl font-bold text-[var(--wine)]">{adjustTarget?.quantityOnHand}</span>
           </div>
           <Field label="Quantity change" htmlFor="a-change" hint="Use a negative number to reduce stock, e.g. -3.">
             <div className="flex items-center gap-2">
@@ -979,7 +1208,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                 type="button"
                 onClick={() => setAdjustChange((v) => String((parseInt(v || '0', 10) || 0) - 1))}
                 aria-label="Decrease change by one"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--border-input)]"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--border-input)] transition hover:border-[var(--wine)] hover:text-[var(--wine)]"
               >
                 <Icon name="remove" size={20} />
               </button>
@@ -995,7 +1224,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                 type="button"
                 onClick={() => setAdjustChange((v) => String((parseInt(v || '0', 10) || 0) + 1))}
                 aria-label="Increase change by one"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--border-input)]"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[var(--border-input)] transition hover:border-[var(--wine)] hover:text-[var(--wine)]"
               >
                 <Icon name="add" size={20} />
               </button>
@@ -1030,50 +1259,79 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
       {/* ── Transfer stock dialog ── */}
       <Modal open={transferOpen} onClose={() => setTransferOpen(false)} title={`Move stock — ${transferTarget?.name ?? ''}`}>
         <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-[var(--surface-alt)] px-4 py-3 text-center">
-              <p className="text-xs font-bold uppercase tracking-wide text-[var(--ink-muted)]">Shop</p>
-              <p className="tnum text-2xl font-bold">{transferTarget?.quantityShop ?? 0}</p>
-            </div>
-            <div className="rounded-xl bg-[var(--surface-alt)] px-4 py-3 text-center">
-              <p className="text-xs font-bold uppercase tracking-wide text-[var(--ink-muted)]">Warehouse</p>
-              <p className="tnum text-2xl font-bold">{transferTarget?.quantityWarehouse ?? 0}</p>
-            </div>
-          </div>
           <Field label="Move from" htmlFor="t-from">
-            <div className="grid grid-cols-2 gap-2">
-              {(['warehouse', 'shop'] as const).map((loc) => (
-                <button
-                  key={loc}
-                  type="button"
-                  onClick={() => setTransferFrom(loc)}
-                  aria-pressed={transferFrom === loc}
-                  className={`flex min-h-[52px] items-center justify-center gap-2 rounded-xl border-2 font-bold capitalize transition active:scale-95 ${
-                    transferFrom === loc
-                      ? 'border-[var(--wine)] bg-[var(--wine)] text-white'
-                      : 'border-[var(--border)] bg-[var(--surface)] text-[var(--ink-muted)]'
-                  }`}
-                >
-                  <Icon name={loc === 'warehouse' ? 'warehouse' : 'storefront'} size={20} />
-                  {loc}
-                </button>
-              ))}
+            <div className="grid grid-cols-2 gap-2" id="t-from" role="group" aria-label="Move from">
+              {(['warehouse', 'shop'] as const).map((loc) => {
+                const selected = transferFrom === loc;
+                const stock = loc === 'warehouse'
+                  ? transferTarget?.quantityWarehouse ?? 0
+                  : transferTarget?.quantityShop ?? 0;
+                return (
+                  <button
+                    key={loc}
+                    type="button"
+                    onClick={() => setTransferFrom(loc)}
+                    aria-pressed={selected}
+                    className={`min-h-[76px] rounded-2xl border-2 p-3 text-left transition active:scale-95 ${
+                      selected
+                        ? 'border-[var(--wine)] bg-[var(--wine-tint)] shadow-[var(--shadow)]'
+                        : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--wine)]/40'
+                    }`}
+                  >
+                    <span className={`flex items-center gap-2 text-sm font-bold capitalize ${selected ? 'text-[var(--wine)]' : 'text-[var(--ink-muted)]'}`}>
+                      <Icon name={loc === 'warehouse' ? 'warehouse' : 'storefront'} size={20} />
+                      {loc}
+                    </span>
+                    <span className="tnum mt-1 block text-2xl font-bold text-[var(--ink)]">{stock}</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-muted)]">
+                      in stock
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </Field>
           <p className="-mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-[var(--ink-muted)]">
             <Icon name="arrow_downward" size={18} />
-            moving to {transferFrom === 'warehouse' ? 'shop' : 'warehouse'}
+            moving to {transferTo}
           </p>
           <Field label="Quantity to move" htmlFor="t-qty">
             <input
               id="t-qty"
-              className={inputClass}
+              className={`${inputClass} tnum text-lg font-bold`}
               inputMode="numeric"
               value={transferQty}
               onChange={(e) => setTransferQty(e.target.value)}
               placeholder="e.g. 10"
             />
           </Field>
+          {/* Movement preview */}
+          <div className="paper-texture rounded-2xl border border-[var(--border)] p-4">
+            <p className="chapter-eyebrow">Movement preview</p>
+            <div className="mt-2 flex items-center gap-2">
+              <div className="flex-1 rounded-xl bg-[var(--surface)] px-3 py-2 text-center">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--ink-muted)] capitalize">
+                  {transferFrom}
+                </p>
+                <p className="tnum text-xl font-bold text-[var(--ink)]">
+                  {transferFromStock}
+                  <span className="mx-1 text-[var(--ink-muted)]">→</span>
+                  {transferQtyValid ? Math.max(0, transferFromStock - transferQtyNum) : '–'}
+                </p>
+              </div>
+              <Icon name="arrow_forward" size={20} className="shrink-0 text-[var(--wine)]" />
+              <div className="flex-1 rounded-xl bg-[var(--surface)] px-3 py-2 text-center">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--ink-muted)] capitalize">
+                  {transferTo}
+                </p>
+                <p className="tnum text-xl font-bold text-[var(--olive)]">
+                  {transferToStock}
+                  <span className="mx-1 text-[var(--ink-muted)]">→</span>
+                  {transferQtyValid ? transferToStock + transferQtyNum : '–'}
+                </p>
+              </div>
+            </div>
+          </div>
           <Field label="Note (optional)" htmlFor="t-notes">
             <input
               id="t-notes"
@@ -1086,7 +1344,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
           <div className="mt-1 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <SecondaryButton onClick={() => setTransferOpen(false)} disabled={transferBusy}>Cancel</SecondaryButton>
             <PrimaryButton onClick={submitTransfer} disabled={transferBusy}>
-              {transferBusy ? 'Moving…' : `Move to ${transferFrom === 'warehouse' ? 'shop' : 'warehouse'}`}
+              {transferBusy ? 'Moving…' : `Move to ${transferTo}`}
             </PrimaryButton>
           </div>
         </div>
@@ -1120,27 +1378,9 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
         ) : movements.length === 0 ? (
           <EmptyState icon="history" title="No movements yet" body="Stock changes, purchases and sales will appear here." />
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-2.5">
             {movements.map((m) => (
-              <li key={m.id} className="flex items-start gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3.5">
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${m.quantity_change >= 0 ? 'bg-[var(--success-bg)] text-[var(--success)]' : 'bg-[var(--danger-bg)] text-[var(--danger)]'}`}>
-                  <Icon name={m.quantity_change >= 0 ? 'add' : 'remove'} size={20} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`tnum text-sm font-bold ${m.quantity_change >= 0 ? 'text-[var(--success)]' : 'text-[var(--danger)]'}`}>
-                      {m.quantity_change >= 0 ? '+' : ''}{m.quantity_change}
-                    </span>
-                    <Badge tone={MOVEMENT_TONES[m.movement_type] ?? 'gray'}>
-                      {MOVEMENT_LABELS[m.movement_type] ?? m.movement_type}
-                    </Badge>
-                  </div>
-                  {m.notes && <p className="mt-1 text-sm text-[var(--ink-muted)]">{m.notes}</p>}
-                  <p className="mt-1 text-xs text-[var(--ink-muted)]">
-                    {m.created_by_name ?? 'System'} · {new Date(m.created_at).toLocaleString('en-GH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </div>
-              </li>
+              <MovementRow key={m.id} m={m} />
             ))}
           </ul>
         )}

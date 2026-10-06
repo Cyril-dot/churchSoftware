@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import Icon from '@/components/Icon';
-import { PageHeader, listVariants, riseVariants } from '@/components/ui';
+import { PageHeader, ChapterHeader, SpineCard, EmptyState, listVariants, riseVariants, inputClass } from '@/components/ui';
 import type { Role } from '@/lib/rbac';
 
 /* ── Content model ─────────────────────────────────────────── */
@@ -23,7 +23,7 @@ interface Topic {
 const CASHIER_TOPICS: Topic[] = [
   {
     icon: 'point_of_sale',
-    title: 'Making a sale',
+    title: 'Making your first sale',
     tagline: 'Ring up a customer from start to finish',
     steps: [
       { title: 'Open Sell', body: 'Tap Sell in the bottom menu. You will see the product list.' },
@@ -33,6 +33,17 @@ const CASHIER_TOPICS: Topic[] = [
       { title: 'Take payment', body: 'Choose Cash, Card, or Mobile Money. For cash, type the amount the customer hands you — the change due is shown automatically.' },
       { title: 'Print the receipt', body: 'Tap Print on the success screen to print the customer’s receipt.' },
       { title: 'Next customer', body: 'Tap New Sale to clear the cart and start over.' },
+    ],
+  },
+  {
+    icon: 'payments',
+    title: 'Handling cash & Mobile Money',
+    tagline: 'Take payment the right way, every time',
+    steps: [
+      { title: 'Count cash in front of the customer', body: 'Read the amount shown, count the notes, and place them in the till before giving change.' },
+      { title: 'Give exact change', body: 'The screen shows the change due automatically — read it out as you hand it over.' },
+      { title: 'Mobile Money', body: 'Choose Mobile Money, confirm the customer’s name on their phone prompt, and only tap complete when they confirm the payment.' },
+      { title: 'Short till?', body: 'Tell your manager immediately — never “top up” the till from your own pocket or the float silently.' },
     ],
   },
   {
@@ -79,6 +90,16 @@ const MANAGER_TOPICS: Topic[] = [
       { title: 'New purchase', body: 'Tap + and pick the supplier (or add a new one).' },
       { title: 'Add the items', body: 'Add each item received, with the quantity and what you paid per unit (cost).' },
       { title: 'Receive', body: 'Tap Receive. Stock levels go up immediately and the cost is recorded.' },
+    ],
+  },
+  {
+    icon: 'account_balance',
+    title: 'Recording bank deposits',
+    tagline: 'Bank the day’s cash and keep a paper trail',
+    steps: [
+      { title: 'Open the dashboard', body: 'Find the Bank deposits card on the dashboard and tap View all.' },
+      { title: 'Record deposit', body: 'Tap Record deposit, pick the bank account, enter the amount, the date it was banked, and the reference from the bank slip.' },
+      { title: 'Done', body: 'The deposit is saved with its reference number, so the totals always add up.' },
     ],
   },
   {
@@ -135,6 +156,48 @@ const TIPS: Step[] = [
   { title: 'Forgot your password?', body: 'Ask an admin or manager to reset it for you from the Users page.' },
 ];
 
+/* ── Onboarding checklists (progress saved on this device) ─── */
+
+interface ChecklistItem {
+  id: string;
+  label: string;
+}
+
+const CASHIER_CHECKLIST: ChecklistItem[] = [
+  { id: 'signin', label: 'Sign in with your own staff account' },
+  { id: 'sell', label: 'Make a practice sale from start to finish' },
+  { id: 'momo', label: 'Take a Mobile Money payment' },
+  { id: 'print', label: 'Print a receipt' },
+  { id: 'reprint', label: 'Reprint a past receipt from Sales' },
+  { id: 'void', label: 'Ask a manager to show you how to void a wrong sale' },
+  { id: 'help', label: 'Know who to call when you get stuck' },
+];
+
+const MANAGER_CHECKLIST: ChecklistItem[] = [
+  { id: 'item', label: 'Add a new item with its price and stock' },
+  { id: 'purchase', label: 'Record a purchase from a supplier' },
+  { id: 'adjust', label: 'Adjust stock for a damaged item (with a reason)' },
+  { id: 'deposit', label: 'Record a bank deposit' },
+  { id: 'void', label: 'Void a wrong sale (with a reason)' },
+  { id: 'reports', label: 'Read today’s report' },
+  { id: 'staff', label: 'Add or edit a staff account (admin only)' },
+];
+
+function checklistKey(kind: 'cashier' | 'manager'): string {
+  return `bookshop_guide_checklist_${kind}`;
+}
+
+function loadChecked(kind: 'cashier' | 'manager'): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(checklistKey(kind));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 /* ── Component ─────────────────────────────────────────────── */
 
 const TABS: { role: Role; label: string; icon: string }[] = [
@@ -149,10 +212,67 @@ function topicsFor(role: Role): Topic[] {
   return CASHIER_TOPICS;
 }
 
+const TAB_LABELS: Record<Role, string> = {
+  cashier: 'Cashier',
+  manager: 'Manager',
+  admin: 'Admin',
+};
+
 export default function GuideClient({ role }: { role: Role }) {
   const [tab, setTab] = useState<Role>(role);
   const [openTopic, setOpenTopic] = useState<number | null>(0);
-  const topics = topicsFor(tab);
+  const [query, setQuery] = useState('');
+
+  const [checkedCashier, setCheckedCashier] = useState<string[]>(() => loadChecked('cashier'));
+  const [checkedManager, setCheckedManager] = useState<string[]>(() => loadChecked('manager'));
+
+  const checklistKind = tab === 'cashier' ? 'cashier' : 'manager';
+  const checklist = checklistKind === 'cashier' ? CASHIER_CHECKLIST : MANAGER_CHECKLIST;
+  const checked = checklistKind === 'cashier' ? checkedCashier : checkedManager;
+  const setChecked = checklistKind === 'cashier' ? setCheckedCashier : setCheckedManager;
+
+  const toggleCheck = (id: string) => {
+    const next = checked.includes(id) ? checked.filter((x) => x !== id) : [...checked, id];
+    setChecked(next);
+    try {
+      localStorage.setItem(checklistKey(checklistKind), JSON.stringify(next));
+    } catch {
+      /* storage unavailable — progress just won't persist */
+    }
+  };
+
+  const resetChecklist = () => {
+    setChecked([]);
+    try {
+      localStorage.removeItem(checklistKey(checklistKind));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const doneCount = checklist.filter((i) => checked.includes(i.id)).length;
+
+  /* Search: filter chapters by title, tagline, and steps */
+  const q = query.trim().toLowerCase();
+  const visible = useMemo(() => {
+    const base = topicsFor(tab).map((topic, idx) => ({ topic, chapter: idx + 1 }));
+    if (!q) return base.map(({ topic, chapter }) => ({ topic, chapter, steps: topic.steps }));
+    const out: { topic: Topic; chapter: number; steps: Step[] }[] = [];
+    for (const { topic, chapter } of base) {
+      const topicHit = `${topic.title} ${topic.tagline}`.toLowerCase().includes(q);
+      const steps = topic.steps.filter(
+        (s) => topicHit || `${s.title} ${s.body}`.toLowerCase().includes(q)
+      );
+      if (steps.length > 0) out.push({ topic, chapter, steps });
+    }
+    return out;
+  }, [tab, q]);
+
+  const switchTab = (r: Role) => {
+    setTab(r);
+    setOpenTopic(0);
+    setQuery('');
+  };
 
   return (
     <motion.div variants={listVariants} initial="hidden" animate="show" className="mx-auto max-w-3xl">
@@ -160,6 +280,93 @@ export default function GuideClient({ role }: { role: Role }) {
         title="Staff Guide"
         subtitle="Step-by-step help for using the bookshop app"
       />
+
+      {/* Search */}
+      <motion.div variants={riseVariants} className="mb-5">
+        <div className="relative">
+          <Icon
+            name="search"
+            size={22}
+            className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-[var(--ink-muted)]"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search the guide — try “receipt” or “void”…"
+            aria-label="Search the guide"
+            className={`${inputClass} pr-11 pl-11`}
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label="Clear search"
+              className="absolute top-1/2 right-2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-[var(--ink-muted)] hover:bg-[var(--surface-alt)]"
+            >
+              <Icon name="close" size={20} />
+            </button>
+          )}
+        </div>
+      </motion.div>
+
+      {/* Onboarding checklist */}
+      <SpineCard tone="olive" className="mb-6 p-5">
+        <ChapterHeader
+          eyebrow="Onboarding checklist"
+          title={checklistKind === 'cashier' ? 'Your first week as a cashier' : 'Your first week as a manager'}
+        />
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-[var(--ink-muted)] tnum">
+            {doneCount} of {checklist.length} done
+          </p>
+          {doneCount > 0 && (
+            <button
+              type="button"
+              onClick={resetChecklist}
+              className="min-h-[44px] px-2 text-sm font-bold text-[var(--ink-muted)] underline underline-offset-2"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+        <div
+          className="mb-4 h-2 overflow-hidden rounded-full bg-[var(--surface-alt)]"
+          role="progressbar"
+          aria-valuenow={doneCount}
+          aria-valuemin={0}
+          aria-valuemax={checklist.length}
+          aria-label="Checklist progress"
+        >
+          <div
+            className="h-full rounded-full bg-[var(--olive)] transition-all"
+            style={{ width: `${(doneCount / checklist.length) * 100}%` }}
+          />
+        </div>
+        <ul className="flex flex-col">
+          {checklist.map((item) => {
+            const done = checked.includes(item.id);
+            return (
+              <li key={item.id}>
+                <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-lg px-1 py-2 active:bg-black/[0.03]">
+                  <input
+                    type="checkbox"
+                    checked={done}
+                    onChange={() => toggleCheck(item.id)}
+                    className="h-6 w-6 shrink-0 accent-[var(--wine)]"
+                  />
+                  <span
+                    className={`text-[15px] ${done ? 'text-[var(--ink-muted)] line-through' : 'text-[var(--ink)]'}`}
+                  >
+                    {item.label}
+                  </span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="mt-2 text-xs text-[var(--ink-muted)]">Your progress is saved on this device.</p>
+      </SpineCard>
 
       {/* Role tabs */}
       <motion.div variants={riseVariants} className="mb-5 grid grid-cols-3 gap-2">
@@ -169,7 +376,7 @@ export default function GuideClient({ role }: { role: Role }) {
             <button
               key={t.role}
               type="button"
-              onClick={() => { setTab(t.role); setOpenTopic(0); }}
+              onClick={() => switchTab(t.role)}
               aria-pressed={active}
               className={`flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border-2 font-bold transition active:scale-95 ${
                 active
@@ -190,73 +397,90 @@ export default function GuideClient({ role }: { role: Role }) {
         </p>
       )}
 
-      {/* Topics */}
-      <div className="space-y-3">
-        {topics.map((topic, i) => {
-          const open = openTopic === i;
-          return (
-            <motion.section
-              key={`${tab}-${topic.title}`}
-              variants={riseVariants}
-              className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]"
-            >
-              <button
-                type="button"
-                onClick={() => setOpenTopic(open ? null : i)}
-                aria-expanded={open}
-                className="flex w-full items-center gap-3 px-4 py-4 text-left active:bg-black/[0.03]"
-              >
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--wine-tint)] text-[var(--wine)]">
-                  <Icon name={topic.icon} size={24} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-display text-[17px] font-bold text-[var(--ink)]">{topic.title}</span>
-                  <span className="block truncate text-[13px] text-[var(--ink-muted)]">{topic.tagline}</span>
-                </span>
-                <Icon
-                  name={open ? 'expand_less' : 'expand_more'}
-                  size={24}
-                  className="shrink-0 text-[var(--ink-muted)]"
-                />
-              </button>
-              {open && (
-                <ol className="border-t border-[var(--border)] px-4 py-4">
-                  {topic.steps.map((step, si) => (
-                    <li key={si} className="flex gap-3 py-2.5 first:pt-1 last:pb-1">
-                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--wine)] text-[13px] font-bold text-white tnum">
-                        {si + 1}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="font-bold text-[15px] text-[var(--ink)]">{step.title}</p>
-                        <p className="mt-0.5 text-[14px] leading-relaxed text-[var(--ink-muted)]">{step.body}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </motion.section>
-          );
-        })}
-      </div>
+      {/* Chapters */}
+      <ChapterHeader eyebrow="Staff handbook" title={`${TAB_LABELS[tab]} chapters`} />
 
-      {/* Tips */}
-      <motion.section variants={riseVariants} className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface-alt)] p-4">
-        <h2 className="flex items-center gap-2 font-display text-lg font-bold text-[var(--ink)]">
-          <Icon name="tips_and_updates" size={22} className="text-[var(--gold)]" />
-          Quick fixes
-        </h2>
-        <ul className="mt-3 space-y-3">
+      {visible.length === 0 ? (
+        <EmptyState
+          icon="search"
+          title="No matches"
+          body={`Nothing in the ${TAB_LABELS[tab].toLowerCase()} guide matches “${query.trim()}”. Try a different word.`}
+        />
+      ) : (
+        <div className="space-y-3">
+          {visible.map(({ topic, chapter, steps }, i) => {
+            const open = q ? true : openTopic === i;
+            return (
+              <motion.section
+                key={`${tab}-${topic.title}`}
+                variants={riseVariants}
+              >
+                <SpineCard tone="wine" className="overflow-hidden p-0">
+                  <button
+                    type="button"
+                    onClick={() => setOpenTopic(open && !q ? null : i)}
+                    aria-expanded={open}
+                    className="block w-full px-4 pt-4 pb-1 text-left active:bg-black/[0.03]"
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--wine-tint)] text-[var(--wine)]">
+                        <Icon name={topic.icon} size={24} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="chapter-eyebrow block">Chapter {chapter}</span>
+                        <span className="chapter-title block">
+                          <span className="chapter-number">{chapter}.</span>
+                          {topic.title}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[13px] text-[var(--ink-muted)]">
+                          {topic.tagline}
+                        </span>
+                      </span>
+                      <Icon
+                        name={open ? 'expand_less' : 'expand_more'}
+                        size={24}
+                        className="shrink-0 text-[var(--ink-muted)]"
+                      />
+                    </span>
+                    <span className="chapter-rule mt-3 block" aria-hidden="true" />
+                  </button>
+                  {open && (
+                    <ol className="px-4 pt-2 pb-4">
+                      {steps.map((step, si) => (
+                        <li key={si} className="flex gap-3 py-2.5 first:pt-1 last:pb-1">
+                          <span className="tnum grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--wine)] text-[13px] font-bold text-white">
+                            {si + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[15px] font-bold text-[var(--ink)]">{step.title}</p>
+                            <p className="mt-0.5 text-[14px] leading-relaxed text-[var(--ink-muted)]">{step.body}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </SpineCard>
+              </motion.section>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Quick fixes */}
+      <SpineCard tone="gold" className="mt-6 p-5">
+        <ChapterHeader eyebrow="Troubleshooting" title="Quick fixes" />
+        <ul className="space-y-3">
           {TIPS.map((tip, i) => (
             <li key={i} className="flex gap-3">
               <Icon name="check_circle" size={20} className="mt-0.5 shrink-0 text-[var(--success)]" />
               <div>
-                <p className="font-bold text-[14px] text-[var(--ink)]">{tip.title}</p>
+                <p className="text-[14px] font-bold text-[var(--ink)]">{tip.title}</p>
                 <p className="text-[13px] leading-relaxed text-[var(--ink-muted)]">{tip.body}</p>
               </div>
             </li>
           ))}
         </ul>
-      </motion.section>
+      </SpineCard>
 
       <p className="mt-6 pb-8 text-center text-[13px] text-[var(--ink-muted)]">
         Still stuck? Ask your manager or admin for help.
