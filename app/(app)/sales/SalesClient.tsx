@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import type { SessionUser } from '@/lib/auth';
 import Icon from '@/components/Icon';
 import { formatMoney } from '@/lib/money';
+import { servedByLine } from '@/lib/cashier';
 import {
   api,
   useDebounce,
@@ -51,6 +52,7 @@ interface ReceiptItem {
   unitPrice: number;
   unitCost: number | null;
   lineTotal: number;
+  priceTier: string;
 }
 
 interface Receipt {
@@ -66,6 +68,7 @@ interface Receipt {
     paymentReference: string | null;
     note: string | null;
     status: string;
+    soldBy: string;
     soldByName: string;
     soldAt: string;
     voidedAt: string | null;
@@ -97,6 +100,13 @@ const METHOD_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
+/* Price-list tier labels for receipt line stamps. */
+const TIER_LABELS: Record<string, string> = {
+  bishop: 'Bishop',
+  sons_of_prophet: 'Sons of Prophet',
+  pastor_deji: 'Pastor Deji',
+};
+
 function fmtDateTime(iso: string): string {
   return new Date(iso).toLocaleString('en-GH', {
     day: 'numeric',
@@ -108,6 +118,45 @@ function fmtDateTime(iso: string): string {
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/* ── Date-range presets (local timezone) ── */
+
+type PresetId = 'today' | 'week' | 'month' | 'year' | 'all' | 'custom';
+
+const PRESETS: { id: Exclude<PresetId, 'custom'>; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'week', label: 'This week' },
+  { id: 'month', label: 'This month' },
+  { id: 'year', label: 'This year' },
+  { id: 'all', label: 'All time' },
+];
+
+function isoDateLocal(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function startOfWeekMondayLocal(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  const daysSinceMonday = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - daysSinceMonday);
+  return d;
+}
+
+function presetRange(id: Exclude<PresetId, 'custom'>): { from: string; to: string } {
+  const now = new Date();
+  if (id === 'all') return { from: '', to: '' };
+  const start =
+    id === 'today'
+      ? now
+      : id === 'week'
+        ? startOfWeekMondayLocal()
+        : id === 'month'
+          ? new Date(now.getFullYear(), now.getMonth(), 1)
+          : new Date(now.getFullYear(), 0, 1);
+  return { from: isoDateLocal(start), to: isoDateLocal(now) };
 }
 
 function StatusBadge({ s }: { s: string }) {
@@ -124,12 +173,31 @@ export default function SalesClient({ user }: { user: SessionUser }) {
   const canVoid = user.role === 'admin' || user.role === 'manager';
   const ownScope = user.role === 'cashier';
 
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(() => presetRange('month').from);
+  const [to, setTo] = useState(() => presetRange('month').to);
+  const [activePreset, setActivePreset] = useState<PresetId>('month');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [status, setStatus] = useState('');
   const [receiptSearch, setReceiptSearch] = useState('');
   const debouncedReceipt = useDebounce(receiptSearch, 300);
+
+  const applyPreset = useCallback((id: PresetId) => {
+    setActivePreset(id);
+    if (id === 'custom') return;
+    const r = presetRange(id);
+    setFrom(r.from);
+    setTo(r.to);
+  }, []);
+
+  const handleFromChange = (v: string) => {
+    setFrom(v);
+    setActivePreset('custom');
+  };
+
+  const handleToChange = (v: string) => {
+    setTo(v);
+    setActivePreset('custom');
+  };
 
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -197,8 +265,7 @@ export default function SalesClient({ user }: { user: SessionUser }) {
   }, [sales, debouncedReceipt]);
 
   const clearFilters = () => {
-    setFrom('');
-    setTo('');
+    applyPreset('month');
     setPaymentMethod('');
     setStatus('');
     setReceiptSearch('');
@@ -292,7 +359,7 @@ export default function SalesClient({ user }: { user: SessionUser }) {
               type="date"
               max={todayISO()}
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
+              onChange={(e) => handleFromChange(e.target.value)}
               className={inputClass}
             />
           </Field>
@@ -303,7 +370,7 @@ export default function SalesClient({ user }: { user: SessionUser }) {
               max={todayISO()}
               min={from || undefined}
               value={to}
-              onChange={(e) => setTo(e.target.value)}
+              onChange={(e) => handleToChange(e.target.value)}
               className={inputClass}
             />
           </Field>
@@ -324,7 +391,40 @@ export default function SalesClient({ user }: { user: SessionUser }) {
             </Field>
           </div>
         </div>
+        {/* Date-range preset chips */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold tracking-wide text-[var(--ink-muted)] uppercase">
+            Range
+          </span>
+          {PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => applyPreset(p.id)}
+              aria-pressed={activePreset === p.id}
+              className={`inline-flex min-h-[44px] items-center rounded-full px-4 text-sm font-semibold transition ${
+                activePreset === p.id
+                  ? 'bg-[var(--wine)] text-white'
+                  : 'bg-[var(--surface-alt)] text-[var(--ink-muted)] hover:bg-[var(--wine-tint)] hover:text-[var(--wine)]'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+          {activePreset === 'custom' && (
+            <span
+              aria-current="true"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-[var(--gold)] px-4 text-sm font-semibold text-[var(--gold)]"
+            >
+              <Icon name="edit_calendar" size={18} /> Custom
+            </span>
+          )}
+        </div>
+        {/* Status chips */}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold tracking-wide text-[var(--ink-muted)] uppercase">
+            Status
+          </span>
           {STATUSES.map((s) => (
             <button
               key={s.value}
@@ -395,9 +495,9 @@ export default function SalesClient({ user }: { user: SessionUser }) {
                     >
                       <Icon name="receipt" size={22} />
                     </span>
-                    <div>
-                      <p className="font-bold text-[var(--ink)]">{s.receiptNumber}</p>
-                      <p className="text-xs text-[var(--ink-muted)]">
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-[var(--ink)]">{s.receiptNumber}</p>
+                      <p className="truncate text-xs text-[var(--ink-muted)]">
                         {fmtDateTime(s.soldAt)}
                         {!ownScope && ` · ${s.soldByName}`}
                       </p>
@@ -434,7 +534,10 @@ export default function SalesClient({ user }: { user: SessionUser }) {
               <div className="text-center">
                 <p className="font-display text-xl text-[var(--ink)]">{detail.sale.receiptNumber}</p>
                 <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                  {fmtDateTime(detail.sale.soldAt)} · {detail.sale.soldByName}
+                  {fmtDateTime(detail.sale.soldAt)}
+                </p>
+                <p className="mt-1 font-bold text-[15px] break-words text-[var(--ink)]">
+                  {servedByLine(detail.sale.soldByName, detail.sale.soldBy)}
                 </p>
                 <div className="mt-2 flex justify-center">
                   <StatusBadge s={detail.sale.status} />
@@ -578,7 +681,9 @@ function SalesReceiptPrint({ receipt }: { receipt: Receipt }) {
           {soldAt.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}{' '}
           {soldAt.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' })}
         </p>
-        <p className="text-xs opacity-70">Cashier: {sale.soldByName}</p>
+        <p className="mt-1 font-bold text-[15px] break-words">
+          {servedByLine(sale.soldByName, sale.soldBy)}
+        </p>
         {sale.status === 'voided' && (
           <p className="mt-1 font-bold uppercase tracking-wide">— VOIDED —</p>
         )}
@@ -590,6 +695,11 @@ function SalesReceiptPrint({ receipt }: { receipt: Receipt }) {
             <span className="flex-1">
               {it.productName}
               <span className="opacity-70"> × {it.quantity}</span>
+              {it.priceTier && it.priceTier !== 'standard' && (
+                <span className="ml-1 rounded border border-black/50 px-1 text-[10px] font-bold uppercase">
+                  {TIER_LABELS[it.priceTier] ?? it.priceTier}
+                </span>
+              )}
             </span>
             <span className="font-semibold">{formatMoney(it.lineTotal)}</span>
           </li>

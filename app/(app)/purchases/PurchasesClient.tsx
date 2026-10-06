@@ -32,6 +32,7 @@ import {
 interface PurchaseRow {
   id: string;
   referenceNumber: string;
+  invoiceNumber: string | null;
   supplierId: string;
   supplierName: string | null;
   status: string;
@@ -46,6 +47,7 @@ interface PurchaseRow {
 interface PurchaseDetail {
   id: string;
   referenceNumber: string;
+  invoiceNumber: string | null;
   supplierId: string;
   supplierName: string | null;
   status: string;
@@ -286,7 +288,7 @@ function LineEditor({
                     type="button"
                     aria-label={`Remove ${l.productName}`}
                     onClick={() => setLines((prev) => prev.filter((x) => x.key !== l.key))}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger)]"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[var(--ink-muted)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger)]"
                   >
                     <Icon name="delete" size={18} />
                   </button>
@@ -355,6 +357,7 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [supplierId, setSupplierId] = useState('');
   const [reference, setReference] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [createBusy, setCreateBusy] = useState(false);
@@ -461,6 +464,7 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
   const openCreate = () => {
     setSupplierId('');
     setReference('');
+    setInvoiceNumber('');
     setNotes('');
     setLines([]);
     setCreateOpen(true);
@@ -485,6 +489,7 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
         body: JSON.stringify({
           supplierId,
           referenceNumber: reference.trim() || undefined,
+          invoiceNumber: invoiceNumber.trim() || undefined,
           notes: notes.trim() || undefined,
           items: valid.map((l) => ({
             productId: l.productId,
@@ -714,6 +719,11 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
                       <p className="truncate font-mono text-[15px] font-bold text-[var(--ink)]">
                         {o.referenceNumber || 'PO'}
                       </p>
+                      {o.invoiceNumber && (
+                        <p className="mt-0.5 truncate font-mono text-xs text-[var(--ink-muted)]">
+                          Inv: {o.invoiceNumber}
+                        </p>
+                      )}
                       <p className="mt-0.5 truncate text-xs text-[var(--ink-muted)]">
                         {o.supplierName ?? 'Unknown supplier'} · {fmtDate(o.orderedAt)}
                       </p>
@@ -786,6 +796,15 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
               placeholder="e.g. PO-2026-014"
             />
           </Field>
+          <Field label="Supplier invoice number" htmlFor="po-invoice" hint="Optional">
+            <input
+              id="po-invoice"
+              className={inputClass}
+              value={invoiceNumber}
+              onChange={(e) => setInvoiceNumber(e.target.value)}
+              placeholder="e.g. INV-123"
+            />
+          </Field>
           <LineEditor lines={lines} setLines={setLines} />
           {lines.length > 0 && (
             <div className="paper-texture rounded-xl border border-[var(--border)] px-4 py-3">
@@ -831,6 +850,11 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
                 <p className="font-mono text-lg font-bold text-[var(--ink)]">
                   {detail.referenceNumber || 'Purchase order'}
                 </p>
+                {detail.invoiceNumber && (
+                  <p className="mt-1 font-mono text-sm text-[var(--ink-muted)]">
+                    Supplier invoice: {detail.invoiceNumber}
+                  </p>
+                )}
                 <p className="mt-0.5 text-sm text-[var(--ink-muted)]">
                   {detail.supplierName} · {fmtDate(detail.orderedAt)}
                 </p>
