@@ -56,6 +56,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/reports', label: 'Reports', icon: 'bar_chart', capability: 'viewReports' },
   { href: '/users', label: 'Users', icon: 'group', capability: 'manageUsers' },
   { href: '/settings', label: 'Settings', icon: 'settings', capability: 'manageSettings' },
+  { href: '/guide', label: 'Guide', icon: 'menu_book', capability: null },
 ];
 
 export function navForRole(role: Role): NavItem[] {

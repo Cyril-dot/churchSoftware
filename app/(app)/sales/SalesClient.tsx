@@ -245,6 +245,17 @@ export default function SalesClient({ user }: { user: SessionUser }) {
 
   return (
     <motion.div variants={listVariants} initial="hidden" animate="show">
+      {/* Print styles — receipt only */}
+      <style>{`
+        @media print {
+          .receipt-no-print { display: none !important; }
+          .receipt-print-only { display: block !important; }
+          body { background: #fff !important; }
+          [data-sonner-toaster] { display: none !important; }
+        }
+      `}</style>
+
+      <div className="receipt-no-print">
       <PageHeader
         title={ownScope ? 'My sales' : 'Sales'}
         subtitle={
@@ -499,13 +510,16 @@ export default function SalesClient({ user }: { user: SessionUser }) {
                 </div>
               )}
             </div>
-            {canVoid && detail.sale.status !== 'voided' && (
-              <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <SecondaryButton onClick={() => window.print()}>
+                <Icon name="print" size={20} /> Print receipt
+              </SecondaryButton>
+              {canVoid && detail.sale.status !== 'voided' && (
                 <DangerButton onClick={() => setVoidOpen(true)}>
                   <Icon name="block" size={20} /> Void sale
                 </DangerButton>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         ) : null}
       </Modal>
@@ -538,6 +552,71 @@ export default function SalesClient({ user }: { user: SessionUser }) {
           </DangerButton>
         </div>
       </Modal>
+      </div>{/* /receipt-no-print */}
+
+      {/* Print-only receipt — reprint any past sale */}
+      {detail && (
+        <div className="receipt-print-only hidden bg-white text-black p-6 max-w-[80mm] mx-auto" aria-hidden="true">
+          <SalesReceiptPrint receipt={detail} />
+        </div>
+      )}
     </motion.div>
+  );
+}
+
+/* ═══════════════════════ Print-only receipt ═══════════════════════ */
+
+function SalesReceiptPrint({ receipt }: { receipt: Receipt }) {
+  const { sale, items } = receipt;
+  const soldAt = new Date(sale.soldAt);
+  return (
+    <div className="text-black text-sm">
+      <div className="text-center mb-3">
+        <p className="font-bold text-lg">Church Bookshop</p>
+        <p className="font-bold">{sale.receiptNumber}</p>
+        <p className="text-xs opacity-70">
+          {soldAt.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}{' '}
+          {soldAt.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+        <p className="text-xs opacity-70">Cashier: {sale.soldByName}</p>
+        {sale.status === 'voided' && (
+          <p className="mt-1 font-bold uppercase tracking-wide">— VOIDED —</p>
+        )}
+      </div>
+      <div className="border-t border-dashed border-black/40 my-2" />
+      <ul className="space-y-1.5">
+        {items.map((it) => (
+          <li key={it.id} className="flex justify-between gap-2">
+            <span className="flex-1">
+              {it.productName}
+              <span className="opacity-70"> × {it.quantity}</span>
+            </span>
+            <span className="font-semibold">{formatMoney(it.lineTotal)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="border-t border-dashed border-black/40 my-2" />
+      <dl className="space-y-1">
+        {sale.subtotal != null && (
+          <div className="flex justify-between"><dt className="opacity-70">Subtotal</dt><dd>{formatMoney(sale.subtotal)}</dd></div>
+        )}
+        {sale.discount > 0 && (
+          <div className="flex justify-between"><dt className="opacity-70">Discount</dt><dd>−{formatMoney(sale.discount)}</dd></div>
+        )}
+        <div className="flex justify-between text-base font-bold"><dt>Total</dt><dd>{formatMoney(sale.total)}</dd></div>
+        <div className="flex justify-between"><dt className="opacity-70">Paid via</dt><dd className="font-semibold">{METHOD_LABELS[sale.paymentMethod] ?? sale.paymentMethod}</dd></div>
+        {sale.amountTendered != null && (
+          <>
+            <div className="flex justify-between"><dt className="opacity-70">Tendered</dt><dd>{formatMoney(sale.amountTendered)}</dd></div>
+            <div className="flex justify-between"><dt className="opacity-70">Change</dt><dd>{formatMoney(sale.change ?? 0)}</dd></div>
+          </>
+        )}
+        {sale.paymentReference && (
+          <div className="flex justify-between"><dt className="opacity-70">Reference</dt><dd className="break-all text-right">{sale.paymentReference}</dd></div>
+        )}
+      </dl>
+      <div className="border-t border-dashed border-black/40 my-2" />
+      <p className="text-center italic">Thank you and God bless you.</p>
+    </div>
   );
 }
