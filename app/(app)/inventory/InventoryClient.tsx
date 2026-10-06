@@ -96,7 +96,8 @@ const PRODUCT_TYPES = [
   { value: 'other_items', label: 'Other Items' },
 ];
 
-export function productTypeLabel(value: string): string {
+export function productTypeLabel(value: string | null | undefined): string {
+  if (!value) return 'Other';
   return PRODUCT_TYPES.find((t) => t.value === value)?.label
     ?? value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
