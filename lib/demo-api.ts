@@ -4,6 +4,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DEMO_USERS, DEMO_PRODUCTS, DEMO_SALES, DEMO_SETTINGS, DEMO_CATEGORIES, DEMO_SUPPLIERS, DEMO_DEPOSIT_ACCOUNTS } from './demo-data';
 
+const DEMO_MOMO = {
+  balance: 1240.5,
+  entries: [] as Array<{
+    id: string; entryType: string; amount: number; balanceAfter: number;
+    reference: string | null; notes: string | null;
+    createdBy: string; createdByName: string; createdAt: string;
+  }>,
+};
+
+const DEMO_CASHOUTS: Array<{
+  id: string; referenceNumber: string; amount: number; cashedAt: string;
+  cashedBy: string; cashedByName: string; notes: string | null; createdAt: string;
+}> = [];
+
 const DEMO_COOKIE = 'bookshop_demo_session';
 
 function ok(data: unknown, status = 200) {
@@ -75,6 +89,7 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
       sku: p.sku,
       barcode: p.barcode,
       coverPhotoUrl: p.cover_photo_url,
+      reference: (p as unknown as Record<string, unknown>).reference as string | null ?? null,
       productType: p.product_type,
       categoryId: null,
       categoryName: p.category,
@@ -82,6 +97,9 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
       supplierName: null,
       costPrice: p.cost_price,
       sellingPrice: p.selling_price,
+      priceBishop: (p as unknown as Record<string, unknown>).price_bishop as number | null ?? p.selling_price,
+      priceSonsOfProphet: (p as unknown as Record<string, unknown>).price_sons_of_prophet as number | null ?? p.selling_price,
+      pricePastorDeji: (p as unknown as Record<string, unknown>).price_pastor_deji as number | null ?? p.selling_price,
       quantityOnHand: p.quantity_on_hand,
       quantityShop: p.quantity_shop,
       quantityWarehouse: p.quantity_warehouse,
@@ -134,9 +152,23 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
   }
   if (path === '/api/v1/sales' && method === 'POST') {
     const body = await req.json().catch(() => ({}));
+    const TIER_COL: Record<string, string> = {
+      bishop: 'price_bishop',
+      sons_of_prophet: 'price_sons_of_prophet',
+      pastor_deji: 'price_pastor_deji',
+    };
     const items = (body.items || []).map((it: any) => {
       const p = DEMO_PRODUCTS.find((x) => x.id === it.productId);
-      return { name: p?.name || 'Unknown', quantity: it.quantity, unit_price: p?.selling_price || 0 };
+      const tierCol = TIER_COL[it.priceTier as string];
+      const tierPrice = tierCol
+        ? ((p as unknown as Record<string, unknown>)?.[tierCol] as number | null)
+        : null;
+      return {
+        name: p?.name || 'Unknown',
+        quantity: it.quantity,
+        unit_price: tierPrice ?? p?.selling_price ?? 0,
+        price_tier: it.priceTier || 'standard',
+      };
     });
     const subtotal = items.reduce((s: number, i: any) => s + i.quantity * i.unit_price, 0);
     const discount = body.discount || 0;
@@ -154,6 +186,59 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
       payment_reference: body.paymentReference || null,
     };
     return ok({ receipt }, 201);
+  }
+
+  // ── Sale receipt detail (demo: map stored demo sale to getReceipt shape) ──
+  if (method === 'GET' && path.startsWith('/api/v1/sales/')) {
+    const id = path.slice('/api/v1/sales/'.length);
+    if (id && !id.includes('/')) {
+      const s = DEMO_SALES.find((x) => x.id === id);
+      if (!s || (user.role === 'cashier' && s.sold_by !== user.id)) {
+        return NextResponse.json(
+          { error: { code: 'NOT_FOUND', message: 'That sale no longer exists.' } },
+          { status: 404 },
+        );
+      }
+      return ok({
+        sale: {
+          id: s.id,
+          receiptNumber: s.receipt_number,
+          paymentMethod: s.payment_method,
+          subtotal: s.subtotal,
+          discount: s.discount,
+          total: s.total,
+          amountTendered: s.amount_tendered,
+          change: s.amount_tendered != null ? s.amount_tendered - s.total : null,
+          paymentReference: null,
+          note: null,
+          status: s.status,
+          soldBy: s.sold_by,
+          soldByName: s.cashier_name,
+          soldAt: s.sold_at,
+          voidedAt: null,
+          voidedBy: null,
+          voidedByName: null,
+          voidReason: null,
+        },
+        items: s.items.map((it: any, i: number) => ({
+          id: `${s.id}-i${i}`,
+          productId: '',
+          productName: it.name,
+          quantity: it.quantity,
+          unitPrice: it.unit_price,
+          unitCost: null,
+          lineTotal: it.unit_price * it.quantity,
+          priceTier: it.price_tier ?? 'standard',
+        })),
+        settings: {
+          shopName: DEMO_SETTINGS.shop_name,
+          currencyCode: DEMO_SETTINGS.currency_code,
+          currencySymbol: DEMO_SETTINGS.currency_symbol,
+          receiptFooter: DEMO_SETTINGS.receipt_footer,
+          timezone: DEMO_SETTINGS.timezone,
+        },
+      });
+    }
   }
 
   // ── Reports ──
@@ -270,6 +355,80 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
     p[from] -= qty;
     p[to] += qty;
     return ok({ transferred: qty, from: body.from, to: body.to });
+  }
+
+  // ── MoMo balance (demo: in-memory) ──
+  if (path === '/api/v1/momo' && method === 'GET') {
+    if (user.role === 'cashier') {
+      return NextResponse.json({ error: { code: 'FORBIDDEN', message: 'Not allowed.' } }, { status: 403 });
+    }
+    return ok({
+      balance: DEMO_MOMO.balance,
+      entries: DEMO_MOMO.entries.slice().reverse(),
+    });
+  }
+  if (path === '/api/v1/momo' && method === 'POST') {
+    if (user.role === 'cashier') {
+      return NextResponse.json({ error: { code: 'FORBIDDEN', message: 'Not allowed.' } }, { status: 403 });
+    }
+    const body = await req.json().catch(() => ({}));
+    const type = body.entryType;
+    const amount = Number(body.amount) || 0;
+    if (!['top_up', 'withdrawal', 'set_balance', 'sale', 'cashout'].includes(type)) {
+      return NextResponse.json({ error: { code: 'INVALID', message: 'Invalid entry type.' } }, { status: 400 });
+    }
+    let next = DEMO_MOMO.balance;
+    if (type === 'top_up' || type === 'sale') next += amount;
+    else if (type === 'withdrawal' || type === 'cashout') {
+      if (amount > next) {
+        return NextResponse.json({ error: { code: 'INSUFFICIENT', message: 'Insufficient MoMo balance.' } }, { status: 400 });
+      }
+      next -= amount;
+    } else next = amount;
+    const entry = {
+      id: `momo-${Date.now()}`,
+      entryType: type,
+      amount,
+      balanceAfter: next,
+      reference: body.reference ?? null,
+      notes: body.notes ?? null,
+      createdBy: user.id,
+      createdByName: user.name,
+      createdAt: new Date().toISOString(),
+    };
+    DEMO_MOMO.balance = next;
+    DEMO_MOMO.entries.push(entry);
+    return ok({ entry }, 201);
+  }
+
+  // ── Cash-outs (demo: in-memory) ──
+  if (path === '/api/v1/cashouts' && method === 'GET') {
+    if (user.role === 'cashier') {
+      return NextResponse.json({ error: { code: 'FORBIDDEN', message: 'Not allowed.' } }, { status: 403 });
+    }
+    return ok({ items: DEMO_CASHOUTS.slice().reverse(), nextCursor: null });
+  }
+  if (path === '/api/v1/cashouts' && method === 'POST') {
+    if (user.role !== 'admin') {
+      return NextResponse.json({ error: { code: 'FORBIDDEN', message: 'Only admins can record cash-outs.' } }, { status: 403 });
+    }
+    const body = await req.json().catch(() => ({}));
+    const amount = Number(body.amount) || 0;
+    if (amount <= 0) {
+      return NextResponse.json({ error: { code: 'INVALID', message: 'Amount must be positive.' } }, { status: 400 });
+    }
+    const cashout = {
+      id: `co-${Date.now()}`,
+      referenceNumber: `C-${String(DEMO_CASHOUTS.length + 1).padStart(6, '0')}`,
+      amount,
+      cashedAt: body.cashedAt || new Date().toISOString(),
+      cashedBy: user.id,
+      cashedByName: user.name,
+      notes: body.notes ?? null,
+      createdAt: new Date().toISOString(),
+    };
+    DEMO_CASHOUTS.push(cashout);
+    return ok({ cashout }, 201);
   }
 
   // Fallback: not implemented in demo

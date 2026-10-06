@@ -10,5 +10,5 @@ export default async function DepositsPage() {
   const user = await getSessionUserFromCookies();
   if (!user) redirect('/login');
   if (!can(user.role as Role, 'manageDeposits')) redirect('/dashboard');
-  return <DepositsClient />;
+  return <DepositsClient role={user.role as Role} />;
 }
