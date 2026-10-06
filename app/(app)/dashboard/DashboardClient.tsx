@@ -7,6 +7,7 @@ import { can, type Role } from '@/lib/rbac';
 import type { SessionUser } from '@/lib/auth';
 import { formatMoney, formatMoneyCompact } from '@/lib/money';
 import Icon from '@/components/Icon';
+import { api } from '@/components/ui';
 
 /* ── Types ─────────────────────────────────────────────────────── */
 export interface DayPoint {
@@ -293,6 +294,52 @@ function LowStock({ items }: { items: LowStockItem[] }) {
   );
 }
 
+/* ── Deposit accounts summary ──────────────────────────────────── */
+function DepositsWidget() {
+  const [accounts, setAccounts] = useState<
+    { id: string; name: string; totalDeposited: number }[]
+  >([]);
+  useEffect(() => {
+    api<{ items: { id: string; name: string; totalDeposited: number }[] }>(
+      '/api/v1/deposit-accounts'
+    )
+      .then((r) => setAccounts(r.items))
+      .catch(() => {});
+  }, []);
+  if (accounts.length === 0) return null;
+  return (
+    <motion.section
+      variants={rise}
+      aria-label="Deposit accounts"
+      className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6"
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-display text-lg text-[var(--ink)]">Bank deposits</h2>
+        <Link href="/deposits" className="text-sm font-bold text-[var(--wine)]">
+          View all
+        </Link>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {accounts.map((a) => (
+          <Link
+            key={a.id}
+            href="/deposits"
+            className="flex items-center justify-between gap-3 rounded-xl bg-[var(--surface-alt)] px-4 py-3 transition hover:bg-[var(--wine)]/5"
+          >
+            <span className="flex items-center gap-3">
+              <span className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--wine)]/10 text-[var(--wine)]">
+                <Icon name="account_balance" size={22} />
+              </span>
+              <span className="font-bold text-[15px]">{a.name}</span>
+            </span>
+            <span className="tnum font-bold text-[var(--wine)]">{formatMoney(a.totalDeposited)}</span>
+          </Link>
+        ))}
+      </div>
+    </motion.section>
+  );
+}
+
 /* ── Dashboard ─────────────────────────────────────────────────── */
 export default function DashboardClient({
   user,
@@ -398,12 +445,16 @@ export default function DashboardClient({
         )}
       </div>
 
+      {/* Deposit accounts */}
+      {can(role, 'manageDeposits') && <DepositsWidget />}
+
       {/* Quick actions */}
       <motion.nav variants={rise} aria-label="Quick actions" className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {[
           { href: '/sell', icon: 'point_of_sale', label: 'New sale', show: can(role, 'sell') },
           { href: '/inventory', icon: 'inventory_2', label: 'Manage items', show: can(role, 'manageInventory') },
           { href: '/purchases', icon: 'shopping_bag', label: 'Purchases', show: can(role, 'managePurchases') },
+          { href: '/deposits', icon: 'account_balance', label: 'Record deposit', show: can(role, 'manageDeposits') },
           { href: '/reports', icon: 'bar_chart', label: 'Reports', show: can(role, 'viewReports') },
         ]
           .filter((a) => a.show)

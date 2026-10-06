@@ -11,10 +11,14 @@ import { formatMoney, parseMoney } from '@/lib/money';
 interface ApiProduct {
   id: string;
   name: string;
-  author_or_brand?: string | null;
-  selling_price: number;
-  quantity_on_hand: number;
+  authorOrBrand?: string | null;
+  sellingPrice: number;
+  quantityOnHand: number;
+  quantityShop: number;
   sku?: string | null;
+  barcode?: string | null;
+  coverPhotoUrl?: string | null;
+  productType?: string | null;
 }
 
 interface CartLine {
@@ -66,6 +70,20 @@ const CART_KEY = 'bookshop.pos.cart.v1';
 const LOW_STOCK_AT = 5;
 const QUICK_CASH = [10, 20, 50, 100];
 
+/* Category tiles — colors inspired by the shop's Odoo layout */
+const CATEGORY_TILES: { value: string; label: string; bg: string; icon: string }[] = [
+  { value: 'bishop_books', label: 'Bishop Books', bg: 'bg-blue-200 text-blue-900', icon: 'menu_book' },
+  { value: 'other_authors', label: 'Other Authors', bg: 'bg-violet-200 text-violet-900', icon: 'auto_stories' },
+  { value: 'bibles', label: 'Bibles', bg: 'bg-amber-200 text-amber-900', icon: 'book' },
+  { value: 'children_books', label: 'Children Books', bg: 'bg-emerald-200 text-emerald-900', icon: 'child_care' },
+  { value: 'children_bible', label: 'Children Bible', bg: 'bg-lime-200 text-lime-900', icon: 'family_restroom' },
+  { value: 'stationery', label: 'Stationery', bg: 'bg-teal-200 text-teal-900', icon: 'edit_note' },
+  { value: 'gift', label: 'Gifts', bg: 'bg-rose-200 text-rose-900', icon: 'card_giftcard' },
+  { value: 'apparel', label: 'Apparel', bg: 'bg-orange-200 text-orange-900', icon: 'checkroom' },
+  { value: 'media', label: 'Media', bg: 'bg-cyan-200 text-cyan-900', icon: 'album' },
+  { value: 'other_items', label: 'Other Items', bg: 'bg-sky-200 text-sky-900', icon: 'category' },
+];
+
 /* ═══════════════════════ Helpers ═══════════════════════ */
 
 function loadCart(): CartLine[] {
@@ -80,7 +98,7 @@ function loadCart(): CartLine[] {
 }
 
 async function apiGetProducts(search: string, signal: AbortSignal): Promise<ApiProduct[]> {
-  const params = new URLSearchParams({ limit: '50' });
+  const params = new URLSearchParams({ limit: '60' });
   if (search.trim()) params.set('search', search.trim());
   const res = await fetch(`/api/v1/products?${params}`, { signal });
   if (!res.ok) {
@@ -88,7 +106,20 @@ async function apiGetProducts(search: string, signal: AbortSignal): Promise<ApiP
     throw new Error(body?.error?.message ?? `Search failed (${res.status})`);
   }
   const body = await res.json();
-  return body?.data?.items ?? [];
+  const items = body?.data?.items ?? [];
+  /* Normalize: real API returns camelCase, demo returns snake_case */
+  return items.map((p: Record<string, unknown>) => ({
+    id: String(p.id),
+    name: String(p.name),
+    authorOrBrand: (p.authorOrBrand ?? p.authorOrBrand ?? null) as string | null,
+    sellingPrice: Number(p.sellingPrice ?? p.sellingPrice ?? 0),
+    quantityOnHand: Number(p.quantityOnHand ?? p.quantityOnHand ?? 0),
+    quantityShop: Number(p.quantityShop ?? p.quantity_shop ?? p.quantityOnHand ?? p.quantityOnHand ?? 0),
+    sku: (p.sku ?? null) as string | null,
+    barcode: (p.barcode ?? null) as string | null,
+    coverPhotoUrl: (p.coverPhotoUrl ?? p.cover_photo_url ?? null) as string | null,
+    productType: (p.productType ?? p.product_type ?? null) as string | null,
+  }));
 }
 
 /* ═══════════════════════ Small components ═══════════════════════ */
@@ -154,6 +185,7 @@ export default function SellPage() {
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [selectedType, setSelectedType] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   /* ── cart (hydrated from localStorage on first render) ── */
@@ -232,6 +264,11 @@ export default function SellPage() {
   }, []);
 
   /* ── totals ── */
+  const visibleProducts = useMemo(() => {
+    if (!selectedType) return products;
+    return products.filter((p) => p.productType === selectedType);
+  }, [products, selectedType]);
+
   const subtotal = useMemo(() => cart.reduce((s, l) => s + l.unitPrice * l.quantity, 0), [cart]);
   const discountAmount = useMemo(() => {
     const v = parseFloat(discountValue) || 0;
@@ -258,20 +295,20 @@ export default function SellPage() {
   }, []);
 
   const addToCart = useCallback((p: ApiProduct, fromX?: number, fromY?: number) => {
-    if (p.quantity_on_hand <= 0) {
+    if (p.quantityOnHand <= 0) {
       toast.error(`"${p.name}" is out of stock.`);
       return;
     }
     setCart((prev) => {
       const existing = prev.find((l) => l.productId === p.id);
       if (existing) {
-        if (existing.quantity >= p.quantity_on_hand) {
-          toast.warning(`Only ${p.quantity_on_hand} left of "${p.name}".`);
+        if (existing.quantity >= p.quantityOnHand) {
+          toast.warning(`Only ${p.quantityOnHand} left of "${p.name}".`);
           return prev;
         }
-        return prev.map((l) => l.productId === p.id ? { ...l, quantity: l.quantity + 1, stock: p.quantity_on_hand } : l);
+        return prev.map((l) => l.productId === p.id ? { ...l, quantity: l.quantity + 1, stock: p.quantityOnHand } : l);
       }
-      return [...prev, { productId: p.id, name: p.name, unitPrice: p.selling_price, quantity: 1, stock: p.quantity_on_hand }];
+      return [...prev, { productId: p.id, name: p.name, unitPrice: p.sellingPrice, quantity: 1, stock: p.quantityOnHand }];
     });
     /* fly-to-cart animation (target measured at tap time) */
     if (fromX != null && fromY != null && !reduceMotion) {
@@ -394,10 +431,10 @@ export default function SellPage() {
 
   /* ── render helpers ── */
   const stockBadge = (p: ApiProduct) => {
-    if (p.quantity_on_hand <= 0)
+    if (p.quantityOnHand <= 0)
       return <span className="inline-flex items-center gap-1 rounded-full bg-danger-bg text-danger text-xs font-semibold px-2.5 py-1"><Icon name="block" size={14} />Out</span>;
-    if (p.quantity_on_hand <= LOW_STOCK_AT)
-      return <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg text-warning text-xs font-semibold px-2.5 py-1"><Icon name="warning" size={14} />{p.quantity_on_hand} left</span>;
+    if (p.quantityOnHand <= LOW_STOCK_AT)
+      return <span className="inline-flex items-center gap-1 rounded-full bg-warning-bg text-warning text-xs font-semibold px-2.5 py-1"><Icon name="warning" size={14} />{p.quantityOnHand} left</span>;
     return <span className="inline-flex items-center gap-1 rounded-full bg-success-bg text-success text-xs font-semibold px-2.5 py-1"><Icon name="check_circle" size={14} />In stock</span>;
   };
 
@@ -485,8 +522,30 @@ export default function SellPage() {
             </div>
           </div>
 
-          {/* Mobile tabs */}
-          <div className="lg:hidden mt-3 grid grid-cols-2 gap-2 p-1 rounded-xl bg-surface-alt border border-border" role="tablist" aria-label="POS views">
+          {/* Category tiles */}
+          <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5" role="group" aria-label="Filter by category">
+            {CATEGORY_TILES.map((t) => {
+              const active = selectedType === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setSelectedType(active ? null : t.value)}
+                  aria-pressed={active}
+                  className={`flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center font-bold transition active:scale-95 ${
+                    active
+                      ? 'bg-wine text-white shadow-lg ring-2 ring-wine ring-offset-2 ring-offset-background'
+                      : `${t.bg} hover:brightness-95`
+                  }`}
+                >
+                  <Icon name={t.icon} size={22} />
+                  <span className="text-[11px] leading-tight sm:text-xs">{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/*Mobile tabs */}          <div className="lg:hidden mt-3 grid grid-cols-2 gap-2 p-1 rounded-xl bg-surface-alt border border-border" role="tablist" aria-label="POS views">
             {(['browse', 'cart'] as const).map((tab) => (
               <button
                 key={tab}
@@ -549,19 +608,32 @@ export default function SellPage() {
                   <Icon name="menu_book" size={32} />
                 </div>
                 <h2 className="font-display text-xl mb-1">Ready to serve</h2>
-                <p className="text-ink-muted">Search above to find books, Bibles and stationery.<br />Tap a card to add it to the cart.</p>
+                <p className="text-ink-muted">Browse the shelves below, or search above.<br />Tap a card to add it to the cart.</p>
               </div>
-            ) : products.length === 0 && !searching ? (
+            ) : visibleProducts.length === 0 && !searching ? (
               <div className="rounded-xl bg-surface border border-border p-10 text-center">
                 <Icon name="search_off" size={40} className="text-ink-muted mx-auto mb-3" />
                 <h2 className="font-display text-xl mb-1">No matches</h2>
-                <p className="text-ink-muted">Nothing found for “{debouncedQuery}”. Try another title or author.</p>
+                <p className="text-ink-muted">
+                  {selectedType
+                    ? 'No items in this category yet.'
+                    : `Nothing found for “${debouncedQuery}”. Try another title or author.`}
+                </p>
+                {selectedType && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedType(null)}
+                    className="mt-4 h-11 px-5 rounded-xl bg-wine text-white font-bold active:scale-95 transition"
+                  >
+                    Show all items
+                  </button>
+                )}
               </div>
             ) : (
-              <ul className="grid grid-cols-2 md:grid-cols-3 gap-3" aria-label="Search results">
+              <ul className="grid grid-cols-2 md:grid-cols-3 gap-3" aria-label="Products">
                 <AnimatePresence>
-                  {products.map((p, i) => {
-                    const out = p.quantity_on_hand <= 0;
+                  {visibleProducts.map((p, i) => {
+                    const out = p.quantityOnHand <= 0;
                     return (
                       <motion.li
                         key={p.id}
@@ -578,22 +650,31 @@ export default function SellPage() {
                           className={`w-full min-h-[44px] text-left rounded-xl bg-surface border border-border p-3 shadow-sm flex flex-col gap-2 transition active:scale-[0.97] ${
                             out ? 'opacity-60' : 'hover:border-wine/60 hover:shadow-md'
                           }`}
-                          aria-label={`Add ${p.name} to cart, ${formatMoney(p.selling_price)}`}
+                          aria-label={`Add ${p.name} to cart, ${formatMoney(p.sellingPrice)}`}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <div className="w-12 h-12 rounded-lg bg-wine-tint text-wine grid place-items-center shrink-0">
-                              <Icon name="menu_book" size={26} />
-                            </div>
+                            {p.coverPhotoUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={p.coverPhotoUrl}
+                                alt=""
+                                className="w-12 h-16 rounded-lg object-cover shrink-0 border border-border"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-lg bg-wine-tint text-wine grid place-items-center shrink-0">
+                                <Icon name="menu_book" size={26} />
+                              </div>
+                            )}
                             {stockBadge(p)}
                           </div>
                           <div className="min-w-0">
                             <p className="font-bold leading-tight line-clamp-2">{p.name}</p>
-                            {p.author_or_brand && (
-                              <p className="text-sm text-ink-muted truncate">{p.author_or_brand}</p>
+                            {p.authorOrBrand && (
+                              <p className="text-sm text-ink-muted truncate">{p.authorOrBrand}</p>
                             )}
                           </div>
                           <div className="mt-auto flex items-center justify-between">
-                            <span className="tnum text-lg font-bold text-wine">{formatMoney(p.selling_price)}</span>
+                            <span className="tnum text-lg font-bold text-wine">{formatMoney(p.sellingPrice)}</span>
                             <span className={`w-9 h-9 rounded-full grid place-items-center ${out ? 'bg-surface-alt text-ink-muted' : 'bg-wine text-white'}`}>
                               <Icon name="add" size={20} />
                             </span>
@@ -929,19 +1010,19 @@ export default function SellPage() {
                   <ReceiptBody receipt={receipt} />
                 </div>
 
-                <div className="p-4 pt-0 grid grid-cols-2 gap-2">
+                <div className="p-4 pt-0 grid grid-cols-1 gap-2">
                   <button
                     onClick={() => window.print()}
-                    className="h-14 rounded-xl bg-surface-alt border-2 border-border-input font-bold inline-flex items-center justify-center gap-2 active:scale-95 transition"
+                    autoFocus
+                    className="h-16 rounded-xl bg-wine text-white text-lg font-bold inline-flex items-center justify-center gap-2 hover:bg-wine-hover active:scale-95 transition shadow-lg"
                   >
-                    <Icon name="print" size={22} /> Print
+                    <Icon name="print" size={26} /> Print Receipt
                   </button>
                   <button
                     onClick={newSale}
-                    autoFocus
-                    className="h-14 rounded-xl bg-wine text-white font-bold inline-flex items-center justify-center gap-2 hover:bg-wine-hover active:scale-95 transition"
+                    className="h-12 rounded-xl bg-surface-alt border-2 border-border-input font-bold inline-flex items-center justify-center gap-2 active:scale-95 transition"
                   >
-                    <Icon name="add_shopping_cart" size={22} /> New Sale
+                    <Icon name="add_shopping_cart" size={20} /> New Sale
                   </button>
                 </div>
               </motion.div>
