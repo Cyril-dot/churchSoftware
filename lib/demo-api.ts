@@ -139,7 +139,7 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
       total: s.total,
       amountTendered: s.amount_tendered,
       soldBy: s.sold_by,
-      cashierName: s.cashier_name,
+      soldByName: s.cashier_name,
       soldAt: s.sold_at,
       status: s.status,
       items: s.items.map((i) => ({
