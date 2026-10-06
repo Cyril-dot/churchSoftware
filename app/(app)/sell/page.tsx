@@ -292,14 +292,14 @@ interface CoverTheme { bg: string; ink: string; accent: string; sub: string; }
 const COVER_THEMES: Record<string, CoverTheme> = {
   bibles:         { bg: 'linear-gradient(150deg,#7A2A44 0%,#3D1424 70%)', ink: '#F7ECD4', accent: '#E3C878', sub: '#D9B15A' },
   childrenbible:  { bg: 'linear-gradient(150deg,#8A3B2E 0%,#4A1E14 70%)', ink: '#FBEFD8', accent: '#F2C879', sub: '#E8A85C' },
-  bishop:         { bg: 'linear-gradient(150deg,#4A3220 0%,#241708 70%)', ink: '#F5E9D4', accent: '#E3C878', sub: '#C9A86A' },
-  books:          { bg: 'linear-gradient(150deg,#3B3B28 0%,#1C1C12 70%)', ink: '#F2EDDC', accent: '#D9C27A', sub: '#B8A05C' },
+  bishop:         { bg: 'linear-gradient(150deg,#5A3A1E 0%,#2A1A08 70%)', ink: '#F7ECD4', accent: '#F0C878', sub: '#D9A85C' },
+  books:          { bg: 'linear-gradient(150deg,#6B4A1F 0%,#33200A 70%)', ink: '#FBF0D8', accent: '#F2C879', sub: '#D9A85C' },
   children:       { bg: 'linear-gradient(150deg,#B25A2A 0%,#5E2C12 70%)', ink: '#FFF3DF', accent: '#FFD98A', sub: '#F0B25E' },
-  stationery:     { bg: 'linear-gradient(150deg,#2E5245 0%,#142A22 70%)', ink: '#EAF2E4', accent: '#B8D9A8', sub: '#8FBF7F' },
-  gift:           { bg: 'linear-gradient(150deg,#5C3358 0%,#2C1830 70%)', ink: '#F2E4F2', accent: '#D9A8D9', sub: '#B983B9' },
+  stationery:     { bg: 'linear-gradient(150deg,#2F6B4F 0%,#14301F 70%)', ink: '#EAF7E4', accent: '#C8E8A8', sub: '#9FD08F' },
+  gift:           { bg: 'linear-gradient(150deg,#6B3A63 0%,#331A38 70%)', ink: '#F5E4F5', accent: '#E0AEE0', sub: '#C08FC0' },
   apparel:        { bg: 'linear-gradient(150deg,#3D3D4A 0%,#1B1B22 70%)', ink: '#ECECF2', accent: '#B8B8D9', sub: '#8F8FB8' },
   media:          { bg: 'linear-gradient(150deg,#2E3E63 0%,#161D38 70%)', ink: '#E6ECFA', accent: '#A8BEE8', sub: '#7F97C9' },
-  other:          { bg: 'linear-gradient(150deg,#55552E 0%,#282814 70%)', ink: '#F0F0DC', accent: '#D9D98A', sub: '#B8B85C' },
+  other:          { bg: 'linear-gradient(150deg,#5E5E33 0%,#2B2B14 70%)', ink: '#F2F2DC', accent: '#E0E08A', sub: '#BFBF5C' },
 };
 function coverThemeFor(productType: string | null | undefined): CoverTheme {
   const t = (productType || '').toLowerCase();
@@ -321,42 +321,41 @@ function BookCover({ product, compact }: { product: ApiProduct; compact?: boolea
     return <img src={product.coverPhotoUrl} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]" loading="lazy" />;
   }
   const theme = coverThemeFor(product.productType);
-  const words = product.name.split(' ').filter(Boolean);
-  const shortTitle = words.slice(0, 4).join(' ');
   return (
     <div
-      className="absolute inset-0 flex flex-col justify-between overflow-hidden p-3 transition duration-300 group-hover:scale-[1.04]"
+      className="absolute inset-0 flex flex-col overflow-hidden p-3 transition duration-300 group-hover:scale-[1.04]"
       style={{ background: theme.bg }}
       aria-hidden="true"
     >
-      {/* spine highlight */}
-      <div className="absolute inset-y-0 left-0 w-[7px] bg-gradient-to-r from-black/45 via-black/10 to-transparent" />
-      <div className="absolute inset-y-0 left-[7px] w-px bg-white/15" />
+      {/* spine */}
+      <div className="absolute inset-y-0 left-0 w-[10px] bg-gradient-to-r from-black/50 via-black/15 to-transparent" />
+      <div className="absolute inset-y-0 left-[10px] w-px bg-white/20" />
       {/* paper grain */}
       <div className="paper-texture absolute inset-0 opacity-40" />
       {/* ornament */}
-      <div className="relative mt-1 flex justify-center">
+      <div className="relative mt-0.5 flex justify-center pl-2">
         <span
-          className="grid h-8 w-8 place-items-center rounded-full border"
+          className="grid h-8 w-8 place-items-center rounded-full border-2"
           style={{ borderColor: theme.accent, color: theme.accent }}
         >
           <Icon name="auto_stories" size={16} />
         </span>
       </div>
-      {/* title block */}
-      <div className="relative pl-2">
+      <div className="flex-1" />
+      {/* title block — full title, clamped */}
+      <div className="relative pl-2.5">
         <p
-          className={`font-display font-bold leading-[1.12] ${compact ? 'text-[13px] line-clamp-2' : 'text-[15px] line-clamp-3'}`}
+          className={`font-display font-bold leading-[1.15] ${compact ? 'text-[13px] line-clamp-2' : 'text-[15px] line-clamp-4'}`}
           style={{ color: theme.ink }}
         >
-          {shortTitle}
+          {product.name}
         </p>
-        {product.authorOrBrand && !compact && (
+        {product.authorOrBrand && (
           <p className="mt-1 truncate text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: theme.sub }}>
             {product.authorOrBrand}
           </p>
         )}
-        <div className="mt-2 h-px w-8" style={{ background: theme.accent }} />
+        <div className="mt-2 h-[2px] w-10 rounded-full" style={{ background: theme.accent }} />
       </div>
     </div>
   );
