@@ -235,26 +235,27 @@ async function apiGetProducts(search: string, signal: AbortSignal): Promise<ApiP
 /* ═══════════════════════ Small components ═══════════════════════ */
 
 function Stepper({ value, onChange, max }: { value: number; onChange: (v: number) => void; max: number }) {
+  const btn = 'w-9 h-9 rounded-full grid place-items-center transition active:scale-90 disabled:opacity-25';
   return (
-    <div className="flex items-center gap-1 rounded-full bg-surface-alt border border-border p-1">
+    <div className="flex items-center gap-0.5 rounded-full bg-ink/[0.05] border border-border p-1">
       <button
         type="button"
         aria-label="Decrease quantity"
         onClick={() => onChange(Math.max(1, value - 1))}
         disabled={value <= 1}
-        className="w-11 h-11 min-w-11 rounded-full grid place-items-center text-ink hover:bg-wine-tint disabled:opacity-30 active:scale-95 transition"
+        className={`${btn} text-ink hover:bg-white`}
       >
-        <Icon name="remove" size={20} />
+        <Icon name="remove" size={18} />
       </button>
-      <span className="tnum min-w-8 text-center text-lg font-bold" aria-live="polite">{value}</span>
+      <span className="tnum min-w-7 text-center text-[17px] font-black" aria-live="polite">{value}</span>
       <button
         type="button"
         aria-label="Increase quantity"
         onClick={() => onChange(Math.min(max, value + 1))}
         disabled={value >= max}
-        className="w-11 h-11 min-w-11 rounded-full grid place-items-center text-ink hover:bg-wine-tint disabled:opacity-30 active:scale-95 transition"
+        className={`${btn} bg-wine text-white shadow-sm hover:bg-wine-hover`}
       >
-        <Icon name="add" size={20} />
+        <Icon name="add" size={18} />
       </button>
     </div>
   );
@@ -1066,10 +1067,18 @@ export default function SellPage() {
             }>
               {/* Cart lines */}
               <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto p-4 pb-6 lg:p-5 lg:pb-8' : 'p-4 border-b border-border'}>
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="font-display text-xl flex items-center gap-2">
-                    <Icon name="shopping_cart" size={22} /> Cart
-                    {cartCount > 0 && <span className="tnum text-sm font-sans font-bold bg-wine-tint text-wine rounded-full px-2.5 py-0.5">{cartCount}</span>}
+                <div className="flex items-center justify-between mb-1">
+                  <h2 className="flex items-center gap-2.5">
+                    {cart.length > 0 ? (
+                      <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-olive opacity-60" />
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-olive" />
+                      </span>
+                    ) : (
+                      <Icon name="receipt_long" size={22} className="text-ink-muted" />
+                    )}
+                    <span className="font-display text-[22px] text-ink">Current sale</span>
+                    {cartCount > 0 && <span className="tnum rounded-full bg-wine px-2.5 py-0.5 text-[13px] font-black text-white">{cartCount}</span>}
                   </h2>
                   <div className="flex items-center gap-1">
                     <button
@@ -1101,10 +1110,14 @@ export default function SellPage() {
                 </div>
 
                 {cart.length === 0 ? (
-                  <div className="py-8 text-center text-ink-muted">
-                    <Icon name="shopping_basket" size={40} className="mx-auto mb-2 opacity-50" />
-                    <p className="font-semibold">Cart is empty</p>
-                    <p className="text-sm">Tap a product to add it.</p>
+                  <div className="flex flex-col items-center px-6 py-12 text-center">
+                    <div className="paper-texture mb-5 grid h-20 w-20 place-items-center rounded-[22px] border border-dashed border-border-input bg-surface-alt/60 text-ink-muted">
+                      <Icon name="receipt_long" size={38} />
+                    </div>
+                    <p className="font-display text-xl text-ink">No items yet</p>
+                    <p className="mt-1.5 max-w-[230px] text-sm leading-relaxed text-ink-muted">
+                      Tap any product on the shelf to start ringing up this sale.
+                    </p>
                   </div>
                 ) : (
                   <ul className={tillMode ? '-mx-4 px-4' : 'max-h-72 overflow-y-auto -mx-4 px-4'}>
@@ -1117,27 +1130,27 @@ export default function SellPage() {
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -24, height: 0, marginTop: 0, marginBottom: 0 }}
                           transition={{ duration: 0.2 }}
-                          className="ledger-row py-3 flex items-center gap-3 overflow-hidden"
+                          className="group flex items-center gap-2.5 overflow-hidden border-b border-dashed border-border-input/70 py-3.5 last:border-b-0"
                         >
-                          <div className="flex-1 min-w-0">
-                            <p className="font-bold leading-tight truncate">{l.name}</p>
-                            <p className="tnum text-sm text-ink-muted flex items-center gap-1.5 flex-wrap">
-                              {formatMoney(l.unitPrice)} each
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[15px] font-bold leading-snug text-ink">{l.name}</p>
+                            <p className="tnum mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
+                              <span>{formatMoney(l.unitPrice)} <span className="opacity-70">×</span> {l.quantity}</span>
                               {l.priceTier !== 'standard' && (
                                 <StampBadge tone="gold">{TIER_STAMP[l.priceTier]}</StampBadge>
                               )}
                             </p>
                           </div>
                           <Stepper value={l.quantity} max={l.stock} onChange={(v) => setQty(lineKey(l.productId, l.priceTier), v)} />
-                          <div className="w-20 text-right">
-                            <p className="tnum font-bold">{formatMoney(l.unitPrice * l.quantity)}</p>
+                          <div className="w-[74px] shrink-0 text-right">
+                            <p className="tnum text-[15px] font-black text-ink">{formatMoney(l.unitPrice * l.quantity)}</p>
                           </div>
                           <button
                             onClick={() => removeLine(lineKey(l.productId, l.priceTier))}
                             aria-label={`Remove ${l.name}`}
-                            className="w-11 h-11 rounded-full grid place-items-center text-ink-muted hover:text-danger hover:bg-danger-bg active:scale-90 transition shrink-0"
+                            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted/70 transition hover:bg-danger-bg hover:text-danger active:scale-90"
                           >
-                            <Icon name="close" size={20} />
+                            <Icon name="close" size={18} />
                           </button>
                         </motion.li>
                       ))}
@@ -1180,20 +1193,20 @@ export default function SellPage() {
               )}
 
               {/* Totals */}
-              <div className="p-4 border-b border-border space-y-1.5 bg-surface-alt/60">
-                <div className="flex justify-between text-ink-muted">
+              <div className="space-y-2 border-b border-dashed border-border-input/70 bg-ink/[0.025] p-4 lg:p-5">
+                <div className="tnum flex justify-between text-sm text-ink-muted">
                   <span>Subtotal</span>
-                  <AnimatedMoney value={subtotal} className="font-semibold text-ink" />
+                  <AnimatedMoney value={subtotal} className="font-bold text-ink" />
                 </div>
                 {discountAmount > 0 && (
-                  <div className="flex justify-between text-success">
+                  <div className="tnum flex justify-between text-sm font-bold text-olive">
                     <span>Discount{discountMode === 'percent' && discountValue ? ` (${discountValue}%)` : ''}</span>
-                    <span className="tnum font-semibold">−{formatMoney(discountAmount)}</span>
+                    <span>−{formatMoney(discountAmount)}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-baseline pt-1">
-                  <span className="font-bold text-lg">Total</span>
-                  <AnimatedMoney value={total} className="font-display text-[32px] leading-none font-bold text-wine" />
+                <div className="flex items-baseline justify-between border-t border-dashed border-border-input/70 pt-2.5">
+                  <span className="text-[11px] font-black tracking-[0.2em] text-ink-muted uppercase">Total due</span>
+                  <AnimatedMoney value={total} className="tnum font-display text-[38px] leading-none font-black text-wine" />
                 </div>
               </div>
 
@@ -1211,10 +1224,10 @@ export default function SellPage() {
                             role="radio"
                             aria-checked={active}
                             onClick={() => setPaymentMethod(m.value)}
-                            className={`min-h-[64px] rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-bold border-2 transition active:scale-95 ${
+                            className={`min-h-[68px] rounded-2xl flex flex-col items-center justify-center gap-1 text-xs font-bold border-2 transition-all active:scale-95 ${
                               active
-                                ? 'bg-wine border-wine text-white shadow-md'
-                                : 'bg-surface border-border text-ink-muted hover:text-ink hover:border-border-input'
+                                ? 'bg-wine border-wine text-white shadow-[0_8px_20px_rgba(107,35,56,0.35)] -translate-y-0.5'
+                                : 'bg-surface border-border text-ink-muted hover:text-ink hover:border-wine/40 hover:-translate-y-0.5'
                             }`}
                           >
                             <Icon name={m.icon} size={26} />
@@ -1325,12 +1338,13 @@ export default function SellPage() {
                     onClick={checkout}
                     disabled={checkingOut || cart.length === 0}
                     whileTap={reduceMotion ? undefined : { scale: 0.97 }}
-                    className="w-full h-16 rounded-xl bg-wine text-white text-xl font-bold flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 hover:bg-wine-hover transition"
+                    className="group relative w-full h-[68px] rounded-2xl bg-gradient-to-b from-[#8A2F47] via-wine to-[#4E1626] text-white text-xl font-black flex items-center justify-center gap-2.5 shadow-[0_12px_32px_rgba(107,35,56,0.45)] disabled:opacity-40 disabled:shadow-none overflow-hidden transition hover:shadow-[0_16px_40px_rgba(107,35,56,0.55)] hover:-translate-y-0.5"
                   >
+                    <span className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" aria-hidden="true" />
                     {checkingOut ? (
                       <><Icon name="progress_activity" size={26} className="animate-spin" /> Processing…</>
                     ) : (
-                      <><Icon name="payments" size={26} /> Charge <AnimatedMoney value={total} /></>
+                      <><Icon name="payments" size={28} /> Charge <AnimatedMoney value={total} /></>
                     )}
                   </motion.button>
                   <p className="text-center text-xs text-ink-muted flex items-center justify-center gap-1">
