@@ -319,6 +319,29 @@ export default function SellPage() {
   const [mobileTab, setMobileTab] = useState<'browse' | 'cart'>('browse');
   const [checkingOut, setCheckingOut] = useState(false);
   const [receipt, setReceipt] = useState<SaleReceipt | null>(null);
+  /* Till mode — POS takes over the whole screen (shell chrome hidden) */
+  const [tillMode, setTillMode] = useState(false);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('till-mode', tillMode);
+    if (tillMode) {
+      // True fullscreen where permitted; CSS fallback covers the rest.
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else if (document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
+    return () => document.documentElement.classList.remove('till-mode');
+  }, [tillMode]);
+
+  /* ESC exits till mode */
+  useEffect(() => {
+    if (!tillMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTillMode(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [tillMode]);
   /* Current cashier (for the "Served by" line on the receipt) */
   const [cashier, setCashier] = useState<{ name: string; id: string } | null>(null);
 
@@ -585,7 +608,7 @@ export default function SellPage() {
   };
 
   return (
-    <div className="min-h-screen bg-parchment text-ink">
+    <div className={tillMode ? 'h-dvh flex flex-col overflow-hidden bg-parchment text-ink' : 'min-h-screen bg-parchment text-ink'}>
       <Toaster position="top-center" richColors closeButton />
       {/* Print styles — receipt only */}
       <style>{`
@@ -641,6 +664,20 @@ export default function SellPage() {
               <Icon name="shopping_cart" size={20} />
               <span className="tnum">{cartCount}</span>
             </motion.div>
+            <button
+              type="button"
+              onClick={() => setTillMode((v) => !v)}
+              aria-pressed={tillMode}
+              title={tillMode ? 'Exit till mode (Esc)' : 'Till mode — full screen'}
+              className={`hidden lg:inline-flex h-11 min-w-[44px] items-center gap-2 rounded-xl border-2 px-3 text-sm font-bold transition active:scale-95 ${
+                tillMode
+                  ? 'border-wine bg-wine text-white'
+                  : 'border-border bg-surface text-ink hover:border-wine/60'
+              }`}
+            >
+              <Icon name={tillMode ? 'fullscreen_exit' : 'fullscreen'} size={20} />
+              <span className="hidden xl:inline">{tillMode ? 'Exit till' : 'Till mode'}</span>
+            </button>
           </div>
 
           {/* Search */}
@@ -750,11 +787,17 @@ export default function SellPage() {
       </header>
 
       {/* ═══ Main ═══ */}
-      <main className="pos-no-print max-w-7xl mx-auto px-4 py-4 pb-28 lg:pb-12">
-        <div className="lg:grid lg:grid-cols-[1fr_380px] lg:gap-6 lg:items-start">
+      <main className={tillMode
+        ? 'pos-no-print flex-1 min-h-0'
+        : 'pos-no-print max-w-7xl mx-auto px-4 py-4 pb-28 lg:pb-12'
+      }>
+        <div className={tillMode
+          ? 'h-full lg:grid lg:grid-cols-[minmax(0,1fr)_440px]'
+          : 'lg:grid lg:grid-cols-[1fr_380px] lg:gap-6 lg:items-start'
+        }>
 
-          {/* ── Product grid (2/3) ── */}
-          <section aria-label="Products" className={mobileTab === 'cart' ? 'hidden lg:block' : ''}>
+          {/* ── Product grid ── */}
+          <section aria-label="Products" className={`${mobileTab === 'cart' ? 'hidden lg:block' : ''} ${tillMode ? 'h-full min-h-0 overflow-y-auto px-4 py-4 lg:px-6' : ''}`}>
             {searchError ? (
               <div className="rounded-xl bg-danger-bg border border-danger/30 p-6 text-center">
                 <Icon name="cloud_off" size={36} className="text-danger mx-auto mb-2" />
@@ -795,7 +838,7 @@ export default function SellPage() {
                 )}
               </div>
             ) : (
-              <ul className="grid grid-cols-2 md:grid-cols-3 gap-3" aria-label="Products">
+              <ul className={tillMode ? 'grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3' : 'grid grid-cols-2 md:grid-cols-3 gap-3'} aria-label="Products">
                 <AnimatePresence>
                   {visibleProducts.map((p, i) => {
                     const out = p.quantityOnHand <= 0;
@@ -819,8 +862,8 @@ export default function SellPage() {
                           }`}
                           aria-label={`Add ${p.name} to cart, ${formatMoney(tierPrice)}`}
                         >
-                          {/* Cover — 3:4 shelf card with stock stamp overlaid */}
-                          <div className="relative aspect-[3/4] bg-paper-deep shrink-0">
+                          {/* Cover — 3:4 shelf card with stock stamp overlaid (compact banner in till mode) */}
+                          <div className={`relative shrink-0 ${tillMode ? 'aspect-[16/9] bg-paper-deep' : 'aspect-[3/4] bg-paper-deep'}`}>
                             {p.coverPhotoUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
@@ -871,11 +914,17 @@ export default function SellPage() {
             )}
           </section>
 
-          {/* ── Cart panel (1/3) ── */}
-          <aside aria-label="Cart and checkout" className={`${mobileTab === 'browse' ? 'hidden lg:block' : ''} lg:sticky lg:top-[190px]`}>
-            <div className="rounded-xl bg-surface border border-border shadow-sm overflow-hidden paper-texture">
+          {/* ── Cart / selling dashboard ── */}
+          <aside
+            aria-label="Cart and checkout"
+            className={`${mobileTab === 'browse' ? 'hidden lg:block' : ''} ${tillMode ? 'h-full min-h-0 border-t lg:border-t-0 lg:border-l border-border bg-surface' : 'lg:sticky lg:top-[190px]'}`}
+          >
+            <div className={tillMode
+              ? 'h-full flex flex-col overflow-hidden'
+              : 'rounded-xl bg-surface border border-border shadow-sm overflow-hidden paper-texture'
+            }>
               {/* Cart lines */}
-              <div className="p-4 border-b border-border">
+              <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto p-4 lg:p-5' : 'p-4 border-b border-border'}>
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="font-display text-xl flex items-center gap-2">
                     <Icon name="shopping_cart" size={22} /> Cart
@@ -906,7 +955,7 @@ export default function SellPage() {
                     <p className="text-sm">Tap a product to add it.</p>
                   </div>
                 ) : (
-                  <ul className="max-h-72 overflow-y-auto -mx-4 px-4">
+                  <ul className={tillMode ? '-mx-4 px-4' : 'max-h-72 overflow-y-auto -mx-4 px-4'}>
                     <AnimatePresence initial={false}>
                       {cart.map((l) => (
                         <motion.li
@@ -945,6 +994,8 @@ export default function SellPage() {
                 )}
               </div>
 
+              {/* ── Checkout footer: pinned to bottom in till mode ── */}
+              <div className={tillMode ? 'shrink-0 border-t-2 border-border bg-surface max-h-[62%] overflow-y-auto' : 'contents'}>
               {/* Discount */}
               {cart.length > 0 && (
                 <div className="p-4 border-b border-border">
@@ -1135,6 +1186,7 @@ export default function SellPage() {
                   </p>
                 </div>
               )}
+              </div>{/* /checkout footer */}
             </div>
           </aside>
         </div>

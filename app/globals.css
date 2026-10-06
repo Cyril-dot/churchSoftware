@@ -262,3 +262,13 @@ body {
 .bubbly-card { transition: transform 0.18s ease, box-shadow 0.18s ease; }
 .bubbly-card:hover { transform: translateY(-6px); }
 .bubbly-card:active { transform: translateY(2px); }
+
+/* ── Till mode: POS takes over the whole screen ─────────────────── */
+.till-mode body { overflow: hidden; }
+.till-mode [data-till-hide] { display: none !important; }
+.till-mode #main-content {
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.till-mode #main-content nav[aria-label="Breadcrumb"] { display: none !important; }

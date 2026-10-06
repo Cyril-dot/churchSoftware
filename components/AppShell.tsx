@@ -473,6 +473,7 @@ export default function AppShell({
 
       {/* ── Desktop sidebar (≥1024px), collapsible ── */}
       <motion.aside
+        data-till-hide
         initial={false}
         animate={{ width: collapsed ? 80 : 264 }}
         transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
@@ -554,6 +555,7 @@ export default function AppShell({
 
       {/* ── Tablet icon rail (640–1023px) ── */}
       <aside
+        data-till-hide
         className="sticky top-0 z-40 hidden h-screen w-[72px] shrink-0 flex-col items-center bg-[var(--side-bg)] py-4 md:flex lg:hidden"
         aria-label="Icon navigation"
       >
@@ -612,7 +614,7 @@ export default function AppShell({
       {/* ── Main column ── */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top bar */}
-        <header className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--bg)]/90 backdrop-blur">
+        <header data-till-hide className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--bg)]/90 backdrop-blur">
           <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-2 px-4 sm:gap-3 sm:px-6 lg:px-8">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--wine)] text-white lg:hidden">
               <Icon name="menu_book" size={22} />
@@ -699,6 +701,7 @@ export default function AppShell({
 
       {/* ── Mobile bottom tab bar (<640px… actually <md) ── */}
       <nav
+        data-till-hide
         aria-label="Primary"
         className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-[var(--surface)] md:hidden"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
