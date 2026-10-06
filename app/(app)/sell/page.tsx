@@ -285,6 +285,187 @@ function AnimatedMoney({ value, className }: { value: number; className?: string
 
 /* ═══════════════════════ POS page ═══════════════════════ */
 
+/* ── Generated book covers ───────────────────────────────────────
+   Products without a photo get a designed typographic jacket —
+   themed by product type, like a real book on the shelf. */
+interface CoverTheme { bg: string; ink: string; accent: string; sub: string; }
+const COVER_THEMES: Record<string, CoverTheme> = {
+  bibles:         { bg: 'linear-gradient(150deg,#7A2A44 0%,#3D1424 70%)', ink: '#F7ECD4', accent: '#E3C878', sub: '#D9B15A' },
+  childrenbible:  { bg: 'linear-gradient(150deg,#8A3B2E 0%,#4A1E14 70%)', ink: '#FBEFD8', accent: '#F2C879', sub: '#E8A85C' },
+  bishop:         { bg: 'linear-gradient(150deg,#4A3220 0%,#241708 70%)', ink: '#F5E9D4', accent: '#E3C878', sub: '#C9A86A' },
+  books:          { bg: 'linear-gradient(150deg,#3B3B28 0%,#1C1C12 70%)', ink: '#F2EDDC', accent: '#D9C27A', sub: '#B8A05C' },
+  children:       { bg: 'linear-gradient(150deg,#B25A2A 0%,#5E2C12 70%)', ink: '#FFF3DF', accent: '#FFD98A', sub: '#F0B25E' },
+  stationery:     { bg: 'linear-gradient(150deg,#2E5245 0%,#142A22 70%)', ink: '#EAF2E4', accent: '#B8D9A8', sub: '#8FBF7F' },
+  gift:           { bg: 'linear-gradient(150deg,#5C3358 0%,#2C1830 70%)', ink: '#F2E4F2', accent: '#D9A8D9', sub: '#B983B9' },
+  apparel:        { bg: 'linear-gradient(150deg,#3D3D4A 0%,#1B1B22 70%)', ink: '#ECECF2', accent: '#B8B8D9', sub: '#8F8FB8' },
+  media:          { bg: 'linear-gradient(150deg,#2E3E63 0%,#161D38 70%)', ink: '#E6ECFA', accent: '#A8BEE8', sub: '#7F97C9' },
+  other:          { bg: 'linear-gradient(150deg,#55552E 0%,#282814 70%)', ink: '#F0F0DC', accent: '#D9D98A', sub: '#B8B85C' },
+};
+function coverThemeFor(productType: string | null | undefined): CoverTheme {
+  const t = (productType || '').toLowerCase();
+  if (t.includes('children') && t.includes('bible')) return COVER_THEMES.childrenbible;
+  if (t.includes('bible')) return COVER_THEMES.bibles;
+  if (t.includes('bishop')) return COVER_THEMES.bishop;
+  if (t.includes('children')) return COVER_THEMES.children;
+  if (t.includes('stationery')) return COVER_THEMES.stationery;
+  if (t.includes('gift')) return COVER_THEMES.gift;
+  if (t.includes('apparel')) return COVER_THEMES.apparel;
+  if (t.includes('media')) return COVER_THEMES.media;
+  if (t.includes('book') || t.includes('author')) return COVER_THEMES.books;
+  return COVER_THEMES.other;
+}
+
+function BookCover({ product, compact }: { product: ApiProduct; compact?: boolean }) {
+  if (product.coverPhotoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={product.coverPhotoUrl} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-300 group-hover:scale-[1.04]" loading="lazy" />;
+  }
+  const theme = coverThemeFor(product.productType);
+  const words = product.name.split(' ').filter(Boolean);
+  const shortTitle = words.slice(0, 4).join(' ');
+  return (
+    <div
+      className="absolute inset-0 flex flex-col justify-between overflow-hidden p-3 transition duration-300 group-hover:scale-[1.04]"
+      style={{ background: theme.bg }}
+      aria-hidden="true"
+    >
+      {/* spine highlight */}
+      <div className="absolute inset-y-0 left-0 w-[7px] bg-gradient-to-r from-black/45 via-black/10 to-transparent" />
+      <div className="absolute inset-y-0 left-[7px] w-px bg-white/15" />
+      {/* paper grain */}
+      <div className="paper-texture absolute inset-0 opacity-40" />
+      {/* ornament */}
+      <div className="relative mt-1 flex justify-center">
+        <span
+          className="grid h-8 w-8 place-items-center rounded-full border"
+          style={{ borderColor: theme.accent, color: theme.accent }}
+        >
+          <Icon name="auto_stories" size={16} />
+        </span>
+      </div>
+      {/* title block */}
+      <div className="relative pl-2">
+        <p
+          className={`font-display font-bold leading-[1.12] ${compact ? 'text-[13px] line-clamp-2' : 'text-[15px] line-clamp-3'}`}
+          style={{ color: theme.ink }}
+        >
+          {shortTitle}
+        </p>
+        {product.authorOrBrand && !compact && (
+          <p className="mt-1 truncate text-[10px] font-bold tracking-[0.18em] uppercase" style={{ color: theme.sub }}>
+            {product.authorOrBrand}
+          </p>
+        )}
+        <div className="mt-2 h-px w-8" style={{ background: theme.accent }} />
+      </div>
+    </div>
+  );
+}
+
+/* ── Stock badge (module level so cards can use it) ─────────────── */
+function stockBadge(p: ApiProduct) {
+  const inner = (icon: string, label: string) => (
+    <span className="inline-flex items-center gap-1">
+      <Icon name={icon} size={13} />
+      {label}
+    </span>
+  );
+  if (p.quantityOnHand <= 0)
+    return <StampBadge tone="danger">{inner('block', 'OUT')}</StampBadge>;
+  if (p.quantityOnHand <= LOW_STOCK_AT)
+    return <StampBadge tone="gold">{inner('warning', `${p.quantityOnHand} LEFT`)}</StampBadge>;
+  return <StampBadge tone="olive">{inner('check_circle', 'IN STOCK')}</StampBadge>;
+}
+
+/* ── Product card ──────────────────────────────────────────────── */
+function ProductCard({
+  p,
+  priceTier,
+  tiered,
+  tierPrice,
+  out,
+  tillMode,
+  onAdd,
+}: {
+  p: ApiProduct;
+  priceTier: PriceTier;
+  tiered: boolean;
+  tierPrice: number;
+  out: boolean;
+  tillMode: boolean;
+  onAdd: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={out}
+      onClick={onAdd}
+      className={`group w-full text-left rounded-2xl bg-surface border border-border shadow-sm flex flex-col overflow-hidden transition-all duration-200 active:scale-[0.97] ${
+        out
+          ? 'opacity-55 saturate-50'
+          : 'hover:-translate-y-1 hover:border-wine/50 hover:shadow-[0_14px_32px_-12px_rgba(107,35,56,0.35)]'
+      }`}
+      aria-label={`Add ${p.name} to cart, ${formatMoney(tierPrice)}`}
+    >
+      {/* Cover */}
+      <div className={`relative shrink-0 overflow-hidden ${tillMode ? 'aspect-[16/10]' : 'aspect-[4/5]'}`}>
+        <BookCover product={p} compact={tillMode} />
+        {/* stock stamp */}
+        <div className="absolute top-2 left-2">{stockBadge(p)}</div>
+        {/* tier ribbon */}
+        {priceTier !== 'standard' && (
+          <div className="absolute top-2 right-2">
+            <StampBadge tone="gold">{TIER_STAMP[priceTier]}</StampBadge>
+          </div>
+        )}
+        {/* out-of-stock veil */}
+        {out && (
+          <div className="absolute inset-0 grid place-items-center bg-ink/45">
+            <span className="rounded-lg border-2 border-white/80 px-3 py-1 text-sm font-black tracking-[0.2em] text-white uppercase">
+              Out
+            </span>
+          </div>
+        )}
+        {/* hover sheen */}
+        {!out && <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-transparent via-transparent to-white/0 transition group-hover:to-white/10" />}
+      </div>
+      {/* Body */}
+      <div className="flex flex-1 flex-col gap-0.5 p-3">
+        <p className="truncate text-[15px] font-bold leading-snug text-ink">{p.name}</p>
+        {p.authorOrBrand && (
+          <p className="truncate text-xs text-ink-muted">{p.authorOrBrand}</p>
+        )}
+        <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+          <div className="min-w-0">
+            {priceTier !== 'standard' && (
+              <p className="text-[9px] font-black tracking-[0.16em] text-gold uppercase leading-none mb-0.5">
+                {TIER_STAMP[priceTier]}
+              </p>
+            )}
+            <p className="tnum font-display text-[22px] font-bold leading-none text-wine">
+              {formatMoney(tierPrice)}
+            </p>
+            {tiered && (
+              <p className="tnum mt-0.5 text-[11px] text-ink-muted line-through">
+                {formatMoney(p.sellingPrice)}
+              </p>
+            )}
+          </div>
+          <span
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-full shadow-md transition-all duration-200 ${
+              out
+                ? 'bg-surface-alt text-ink-muted'
+                : 'bg-wine text-white group-hover:scale-110 group-hover:bg-wine-hover group-hover:shadow-[0_8px_20px_rgba(107,35,56,0.45)]'
+            }`}
+          >
+            <Icon name="add" size={24} />
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export default function SellPage() {
   const reduceMotion = useReducedMotion();
 
@@ -593,20 +774,6 @@ export default function SellPage() {
   }, []);
 
   /* ── render helpers ── */
-  const stockBadge = (p: ApiProduct) => {
-    const inner = (icon: string, label: string) => (
-      <span className="inline-flex items-center gap-1">
-        <Icon name={icon} size={13} />
-        {label}
-      </span>
-    );
-    if (p.quantityOnHand <= 0)
-      return <StampBadge tone="danger">{inner('block', 'OUT')}</StampBadge>;
-    if (p.quantityOnHand <= LOW_STOCK_AT)
-      return <StampBadge tone="gold">{inner('warning', `${p.quantityOnHand} LEFT`)}</StampBadge>;
-    return <StampBadge tone="olive">{inner('check_circle', 'IN STOCK')}</StampBadge>;
-  };
-
   const quickCash = (amount: number | 'exact') => {
     setTendered(amount === 'exact' ? total.toFixed(2) : String(amount));
   };
@@ -872,59 +1039,15 @@ export default function SellPage() {
                         transition={{ duration: 0.25, delay: reduceMotion ? 0 : Math.min(i * 0.035, 0.35) }}
                         layout
                       >
-                        <button
-                          type="button"
-                          disabled={out}
-                          onClick={(e) => addToCart(p, e.clientX, e.clientY)}
-                          className={`w-full min-h-[44px] text-left rounded-xl bg-surface border border-border shadow-sm flex flex-col overflow-hidden transition active:scale-[0.97] ${
-                            out ? 'opacity-60' : 'hover:border-wine/60 hover:shadow-md'
-                          }`}
-                          aria-label={`Add ${p.name} to cart, ${formatMoney(tierPrice)}`}
-                        >
-                          {/* Cover — 3:4 shelf card with stock stamp overlaid (compact banner in till mode) */}
-                          <div className={`relative shrink-0 ${tillMode ? 'aspect-[16/9] bg-paper-deep' : 'aspect-[3/4] bg-paper-deep'}`}>
-                            {p.coverPhotoUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={p.coverPhotoUrl}
-                                alt=""
-                                className="absolute inset-0 w-full h-full object-cover"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div className="absolute inset-0 grid place-items-center bg-wine-tint text-wine">
-                                <Icon name="menu_book" size={48} />
-                              </div>
-                            )}
-                            <div className="absolute top-2 right-2">{stockBadge(p)}</div>
-                          </div>
-                          <div className="p-3 flex flex-col gap-1 flex-1 min-w-0">
-                            <p className="font-semibold leading-tight line-clamp-2">{p.name}</p>
-                            {p.authorOrBrand && (
-                              <p className="text-sm text-ink-muted truncate">{p.authorOrBrand}</p>
-                            )}
-                            <div className="mt-auto pt-2 flex items-center justify-between gap-2">
-                              <div className="flex flex-col min-w-0">
-                                {priceTier !== 'standard' && (
-                                  <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-ink-muted leading-tight">
-                                    {TIER_STAMP[priceTier]} price
-                                  </span>
-                                )}
-                                <span className="font-display tnum text-xl font-bold text-wine">
-                                  {formatMoney(tierPrice)}
-                                </span>
-                                {tiered && (
-                                  <span className="tnum text-xs text-ink-muted line-through">
-                                    {formatMoney(p.sellingPrice)}
-                                  </span>
-                                )}
-                              </div>
-                              <span className={`w-10 h-10 rounded-full grid place-items-center shrink-0 ${out ? 'bg-surface-alt text-ink-muted' : 'bg-wine text-white shadow-md'}`}>
-                                <Icon name="add" size={22} />
-                              </span>
-                            </div>
-                          </div>
-                        </button>
+                        <ProductCard
+                          p={p}
+                          priceTier={priceTier}
+                          tiered={tiered}
+                          tierPrice={tierPrice}
+                          out={out}
+                          tillMode={tillMode}
+                          onAdd={(e) => addToCart(p, e.clientX, e.clientY)}
+                        />
                       </motion.li>
                     );
                   })}
