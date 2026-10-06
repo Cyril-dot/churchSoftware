@@ -5,15 +5,19 @@ import { handle, ok, requireUser, HttpError } from '@/lib/auth';
 import { money, num, parsePagination, pageEnvelope, cursorCondition, type CursorRow } from '@/lib/api-utils';
 
 const MANAGER_COLS = `
-  p.id, p.name, p.author_or_brand, p.sku, p.product_type, p.category_id,
+  p.id, p.name, p.author_or_brand, p.sku, p.barcode, p.cover_photo_url,
+  p.product_type, p.category_id,
   c.name AS category_name, p.supplier_id, s.name AS supplier_name,
-  p.cost_price, p.selling_price, p.quantity_on_hand, p.reorder_level,
+  p.cost_price, p.selling_price, p.quantity_on_hand,
+  p.quantity_shop, p.quantity_warehouse, p.reorder_level,
   p.active, p.created_at, p.updated_at
 `;
 const CASHIER_COLS = `
-  p.id, p.name, p.author_or_brand, p.sku, p.product_type, p.category_id,
+  p.id, p.name, p.author_or_brand, p.sku, p.barcode, p.cover_photo_url,
+  p.product_type, p.category_id,
   c.name AS category_name,
-  p.selling_price, p.quantity_on_hand, p.reorder_level,
+  p.selling_price, p.quantity_on_hand,
+  p.quantity_shop, p.quantity_warehouse, p.reorder_level,
   p.active, p.created_at, p.updated_at
 `;
 
@@ -23,11 +27,15 @@ function toProduct(row: Record<string, unknown>, full: boolean) {
     name: row.name as string,
     authorOrBrand: row.author_or_brand as string | null,
     sku: row.sku as string | null,
+    barcode: row.barcode as string | null,
+    coverPhotoUrl: row.cover_photo_url as string | null,
     productType: row.product_type as string,
     categoryId: row.category_id as string | null,
     categoryName: row.category_name as string | null,
     sellingPrice: num(row.selling_price),
     quantityOnHand: row.quantity_on_hand as number,
+    quantityShop: row.quantity_shop as number,
+    quantityWarehouse: row.quantity_warehouse as number,
     reorderLevel: row.reorder_level as number,
     active: row.active as boolean,
     createdAt: row.created_at as string,
@@ -61,7 +69,7 @@ export const GET = handle(async (req) => {
   if (search) {
     params.push(`%${search}%`);
     conditions.push(
-      `(p.name ILIKE $${params.length} OR p.author_or_brand ILIKE $${params.length} OR p.sku ILIKE $${params.length})`
+      `(p.name ILIKE $${params.length} OR p.author_or_brand ILIKE $${params.length} OR p.sku ILIKE $${params.length} OR p.barcode ILIKE $${params.length})`
     );
   }
   if (categoryId) {
@@ -96,12 +104,20 @@ const createProductSchema = z.object({
     .max(100)
     .nullish()
     .transform((v) => (v === '' ? null : v)),
+  barcode: z
+    .string()
+    .trim()
+    .max(100)
+    .nullish()
+    .transform((v) => (v === '' ? null : v)),
+  coverPhotoUrl: z.string().trim().max(2000000).nullish(),
   productType: z.string().trim().max(50).default('book'),
   categoryId: z.string().uuid().nullish(),
   supplierId: z.string().uuid().nullish(),
   costPrice: z.number().min(0).default(0),
   sellingPrice: z.number().min(0).default(0),
-  quantityOnHand: z.number().int().min(0).default(0),
+  quantityShop: z.number().int().min(0).default(0),
+  quantityWarehouse: z.number().int().min(0).default(0),
   reorderLevel: z.number().int().min(0).default(0),
 });
 
@@ -120,23 +136,27 @@ export const POST = handle(async (req) => {
   }
 
   const id = randomUUID();
+  const totalOpening = body.quantityShop + body.quantityWarehouse;
   /* Non-interactive transaction: product + opening-stock movement atomically. */
   await sql.transaction([
     sql`
       INSERT INTO products
-        (id, name, author_or_brand, sku, product_type, category_id, supplier_id,
-         cost_price, selling_price, quantity_on_hand, reorder_level)
+        (id, name, author_or_brand, sku, barcode, cover_photo_url, product_type, category_id, supplier_id,
+         cost_price, selling_price, quantity_shop, quantity_warehouse,
+         quantity_on_hand, reorder_level)
       VALUES
         (${id}, ${body.name}, ${body.authorOrBrand ?? null}, ${body.sku ?? null},
+         ${body.barcode ?? null}, ${body.coverPhotoUrl ?? null},
          ${body.productType}, ${body.categoryId ?? null}, ${body.supplierId ?? null},
-         ${body.costPrice}, ${body.sellingPrice}, ${body.quantityOnHand}, ${body.reorderLevel})
+         ${body.costPrice}, ${body.sellingPrice}, ${body.quantityShop}, ${body.quantityWarehouse},
+         ${totalOpening}, ${body.reorderLevel})
     `,
-    ...(body.quantityOnHand > 0
+    ...(totalOpening > 0
       ? [sql`
         INSERT INTO stock_movements
           (id, product_id, movement_type, quantity_change, unit_cost, notes, created_by)
         VALUES
-          (${randomUUID()}, ${id}, 'adjustment', ${body.quantityOnHand},
+          (${randomUUID()}, ${id}, 'adjustment', ${totalOpening},
            ${body.costPrice}, 'Opening stock', ${user.id})
       `]
       : []),

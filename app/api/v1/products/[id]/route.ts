@@ -74,6 +74,14 @@ const patchProductSchema = z
       .nullish()
       .transform((v) => (v === '' ? null : v))
       .optional(),
+    barcode: z
+      .string()
+      .trim()
+      .max(100)
+      .nullish()
+      .transform((v) => (v === '' ? null : v))
+      .optional(),
+    coverPhotoUrl: z.string().trim().max(2000000).nullish(),
     productType: z.string().trim().max(50).optional(),
     categoryId: z.string().uuid().nullish(),
     supplierId: z.string().uuid().nullish(),
@@ -89,6 +97,8 @@ const COL_MAP: Record<string, string> = {
   name: 'name',
   authorOrBrand: 'author_or_brand',
   sku: 'sku',
+  barcode: 'barcode',
+  coverPhotoUrl: 'cover_photo_url',
   productType: 'product_type',
   categoryId: 'category_id',
   supplierId: 'supplier_id',

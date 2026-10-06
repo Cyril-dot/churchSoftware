@@ -6,6 +6,7 @@ const adjustSchema = z.object({
   change: z.number().int().refine((v) => v !== 0, 'Change cannot be zero.'),
   type: z.enum(['adjustment', 'damage', 'return']),
   notes: z.string().trim().max(1000).nullish(),
+  location: z.enum(['shop', 'warehouse']).default('shop'),
 });
 
 export const POST = handle(async (req, ctx) => {
@@ -15,12 +16,13 @@ export const POST = handle(async (req, ctx) => {
   const sql = getSql();
 
   const rows = (await sql`
-    SELECT adjust_stock(${id}, ${user.id}, ${body.change}, ${body.type}, ${body.notes ?? null}) AS quantity_on_hand
-  `) as { quantity_on_hand: number }[];
+    SELECT adjust_stock(${id}, ${user.id}, ${body.change}, ${body.type}, ${body.notes ?? null}, ${body.location}) AS qty
+  `) as { qty: number }[];
   return ok({
     id,
     change: body.change,
     type: body.type,
-    quantityOnHand: (rows[0] as { quantity_on_hand: number }).quantity_on_hand,
+    location: body.location,
+    quantity: (rows[0] as { qty: number }).qty,
   });
 });

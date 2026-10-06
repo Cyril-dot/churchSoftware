@@ -9,6 +9,7 @@ export interface Capability {
   manageInventory: boolean;
   adjustStock: boolean;
   managePurchases: boolean;
+  manageDeposits: boolean;
   viewReports: boolean;
   manageUsers: boolean;
   manageSettings: boolean;
@@ -19,19 +20,19 @@ const CAPABILITIES: Record<Role, Capability> = {
   cashier: {
     sell: true, viewOwnSales: true, viewAllSales: false, viewCost: false,
     voidSale: false, manageInventory: false, adjustStock: false,
-    managePurchases: false, viewReports: false, manageUsers: false,
+    managePurchases: false, manageDeposits: false, viewReports: false, manageUsers: false,
     manageSettings: false, viewAudit: false,
   },
   manager: {
     sell: true, viewOwnSales: true, viewAllSales: true, viewCost: true,
     voidSale: true, manageInventory: true, adjustStock: true,
-    managePurchases: true, viewReports: true, manageUsers: false,
+    managePurchases: true, manageDeposits: true, viewReports: true, manageUsers: false,
     manageSettings: false, viewAudit: false,
   },
   admin: {
     sell: true, viewOwnSales: true, viewAllSales: true, viewCost: true,
     voidSale: true, manageInventory: true, adjustStock: true,
-    managePurchases: true, viewReports: true, manageUsers: true,
+    managePurchases: true, manageDeposits: true, viewReports: true, manageUsers: true,
     manageSettings: true, viewAudit: true,
   },
 };
@@ -53,6 +54,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/sales', label: 'Sales', icon: 'receipt_long', capability: 'viewOwnSales' },
   { href: '/inventory', label: 'Items', icon: 'inventory_2', capability: 'manageInventory' },
   { href: '/purchases', label: 'Purchases', icon: 'shopping_bag', capability: 'managePurchases' },
+  { href: '/deposits', label: 'Deposits', icon: 'account_balance', capability: 'manageDeposits' },
   { href: '/reports', label: 'Reports', icon: 'bar_chart', capability: 'viewReports' },
   { href: '/users', label: 'Users', icon: 'group', capability: 'manageUsers' },
   { href: '/settings', label: 'Settings', icon: 'settings', capability: 'manageSettings' },
