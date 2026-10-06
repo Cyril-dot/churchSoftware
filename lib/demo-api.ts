@@ -67,10 +67,37 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
     let items = DEMO_PRODUCTS.filter((p) => p.active);
     if (search) items = items.filter((p) => p.name.toLowerCase().includes(search));
     if (lowStock) items = items.filter((p) => p.quantity_on_hand <= p.reorder_level);
+    // Return camelCase to match the real API contract
+    const toCamel = (p: (typeof DEMO_PRODUCTS)[number]) => ({
+      id: p.id,
+      name: p.name,
+      authorOrBrand: p.author_or_brand,
+      sku: p.sku,
+      barcode: p.barcode,
+      coverPhotoUrl: p.cover_photo_url,
+      productType: p.product_type,
+      categoryId: null,
+      categoryName: p.category,
+      supplierId: null,
+      supplierName: null,
+      costPrice: p.cost_price,
+      sellingPrice: p.selling_price,
+      quantityOnHand: p.quantity_on_hand,
+      quantityShop: p.quantity_shop,
+      quantityWarehouse: p.quantity_warehouse,
+      reorderLevel: p.reorder_level,
+      active: p.active,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     // Strip cost for cashier
     const mapped = items.map((p) => {
-      const { cost_price, ...rest } = p;
-      return user.role === 'cashier' ? rest : p;
+      const c = toCamel(p);
+      if (user.role === 'cashier') {
+        const { costPrice, ...rest } = c;
+        return rest;
+      }
+      return c;
     });
     return ok({ items: mapped, nextCursor: null });
   }
@@ -157,7 +184,17 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Settings ──
-  if (path === '/api/v1/settings' && method === 'GET') return ok(DEMO_SETTINGS);
+  if (path === '/api/v1/settings' && method === 'GET') {
+    // Return camelCase to match the real API contract
+    return ok({
+      shopName: DEMO_SETTINGS.shop_name,
+      currencyCode: DEMO_SETTINGS.currency_code,
+      currencySymbol: DEMO_SETTINGS.currency_symbol,
+      receiptFooter: DEMO_SETTINGS.receipt_footer,
+      timezone: DEMO_SETTINGS.timezone,
+      updatedAt: null,
+    });
+  }
 
   // ── Users (admin demo) ──
   if (path === '/api/v1/users' && method === 'GET') {
