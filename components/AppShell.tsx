@@ -474,7 +474,7 @@ export default function AppShell({
       {/* ── Desktop sidebar (≥1024px), collapsible ── */}
       <motion.aside
         initial={false}
-        animate={{ width: collapsed ? 80 : 240 }}
+        animate={{ width: collapsed ? 80 : 264 }}
         transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
         className="relative sticky top-0 z-40 hidden h-screen shrink-0 flex-col overflow-hidden bg-[var(--side-bg)] lg:flex"
         aria-label="Sidebar"

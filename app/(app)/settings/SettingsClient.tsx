@@ -220,8 +220,23 @@ export default function SettingsClient({ user }: { user: SessionUser }) {
                   <p className="font-display text-lg text-[var(--ink)]">
                     {shopName.trim() || 'Church Bookshop'}
                   </p>
+                  <p className="tnum mt-1 text-xs text-[var(--ink-muted)]">R-001059 · {new Date().toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                   <div className="my-3 border-t border-dashed border-[var(--border-input)]" />
-                  <p className="text-sm text-[var(--ink-muted)]">··· items ···</p>
+                  <div className="space-y-1.5 text-left text-sm">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-[var(--ink)]">KJV Study Bible × 1</span>
+                      <span className="tnum text-[var(--ink)]">GH₵120.00</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span className="text-[var(--ink)]">NIV Thinline × 2</span>
+                      <span className="tnum text-[var(--ink)]">GH₵190.00</span>
+                    </div>
+                    <div className="flex justify-between gap-3 border-t border-dashed border-[var(--border-input)] pt-1.5 font-bold">
+                      <span className="text-[var(--ink)]">Total</span>
+                      <span className="tnum text-[var(--ink)]">GH₵310.00</span>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-[var(--ink-muted)]">Served by: Ama Serwaa · #staff01</p>
                   <div className="my-3 border-t border-dashed border-[var(--border-input)]" />
                   <p className="text-sm whitespace-pre-line text-[var(--ink-muted)]">
                     {receiptFooter.trim() || 'Thank you for shopping with us!'}

@@ -142,6 +142,7 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
       soldByName: s.cashier_name,
       soldAt: s.sold_at,
       status: s.status,
+      itemCount: s.items.length,
       items: s.items.map((i) => ({
         name: i.name,
         quantity: i.quantity,
