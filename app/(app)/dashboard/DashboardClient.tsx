@@ -134,7 +134,7 @@ function Sparkline({ points, stroke, id }: { points: number[]; stroke: string; i
   const area = `0,${h} ${line} ${w},${h}`;
   const gid = `spark-${id}`;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="h-10 w-full" preserveAspectRatio="none" aria-hidden="true">
+    <svg viewBox={`0 0 ${w} ${h}`} className="h-8 w-full" preserveAspectRatio="none" aria-hidden="true">
       <defs>
         <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
@@ -199,20 +199,22 @@ function Kpi({
     slate: 'bg-[var(--surface-alt)] text-[var(--ink-muted)]',
   }[tone];
   return (
-    <SpineCard tone={tone} className="flex flex-col justify-between gap-3 !p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-bold tracking-[0.14em] text-[var(--ink-muted)] uppercase">{label}</p>
-          <p className="font-display mt-1.5 text-[26px] leading-none text-[var(--ink)] xl:text-[30px]">{value}</p>
-          <div className="mt-1.5">{delta ?? (sub ? <span className="text-xs text-[var(--ink-muted)]">{sub}</span> : null)}</div>
-        </div>
-        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${toneBg}`}>
-          <Icon name={icon} size={24} />
+    <SpineCard tone={tone} className="!p-4">
+      <div className="flex items-center gap-3">
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${toneBg}`}>
+          <Icon name={icon} size={22} />
         </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[10px] font-bold tracking-[0.14em] text-[var(--ink-muted)] uppercase">{label}</p>
+          <p className="font-display tnum mt-0.5 truncate text-[22px] leading-none text-[var(--ink)]">{value}</p>
+          <div className="mt-1 truncate">{delta ?? (sub ? <span className="text-xs text-[var(--ink-muted)]">{sub}</span> : null)}</div>
+        </div>
+        {spark && spark.length > 1 && sparkColor ? (
+          <div className="w-20 shrink-0 sm:w-24">
+            <Sparkline points={spark} stroke={sparkColor} id={label.replace(/\W+/g, '-').toLowerCase()} />
+          </div>
+        ) : null}
       </div>
-      {spark && spark.length > 1 && sparkColor ? (
-        <Sparkline points={spark} stroke={sparkColor} id={label.replace(/\W+/g, '-').toLowerCase()} />
-      ) : null}
     </SpineCard>
   );
 }
