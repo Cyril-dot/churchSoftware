@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import type { SessionUser } from '@/lib/auth';
@@ -11,10 +11,8 @@ import {
   useDebounce,
   listVariants,
   riseVariants,
-  PageHeader,
   PrimaryButton,
   SecondaryButton,
-  Badge,
   Field,
   inputClass,
   Sheet,
@@ -23,6 +21,10 @@ import {
   ErrorState,
   SkeletonRows,
   LoadMore,
+  ChapterHeader,
+  StampBadge,
+  SpineCard,
+  AttentionPanel,
 } from '@/components/ui';
 
 /* ═══════════════════════ Types ═══════════════════════ */
@@ -68,6 +70,11 @@ interface PurchaseDetail {
 interface Supplier {
   id: string;
   name: string;
+  contactPerson: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  active: boolean;
 }
 
 interface ProductLite {
@@ -77,11 +84,28 @@ interface ProductLite {
   quantity_on_hand: number;
 }
 
-const STATUS_TONES: Record<string, 'gray' | 'blue' | 'green' | 'red'> = {
-  draft: 'gray',
-  ordered: 'blue',
-  received: 'green',
-  cancelled: 'red',
+interface LowStockItem {
+  id: string;
+  name: string;
+  sku: string | null;
+  quantityOnHand: number;
+  reorderLevel: number;
+  supplierName?: string | null;
+}
+
+/* Status → stamp tone + card spine tone (presentation only) */
+const STATUS_STAMPS: Record<string, 'slate' | 'brass' | 'olive' | 'danger'> = {
+  draft: 'slate',
+  ordered: 'brass',
+  received: 'olive',
+  cancelled: 'danger',
+};
+
+const STATUS_SPINES: Record<string, 'slate' | 'brass' | 'olive' | 'wine'> = {
+  draft: 'slate',
+  ordered: 'brass',
+  received: 'olive',
+  cancelled: 'wine',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -90,6 +114,12 @@ const STATUS_LABELS: Record<string, string> = {
   received: 'Received',
   cancelled: 'Cancelled',
 };
+
+const PIPELINE_STAGES: { value: string; label: string; tone: 'slate' | 'brass' | 'olive' }[] = [
+  { value: 'draft', label: 'Draft', tone: 'slate' },
+  { value: 'ordered', label: 'Ordered', tone: 'brass' },
+  { value: 'received', label: 'Received', tone: 'olive' },
+];
 
 const STATUS_FILTERS = [
   { value: '', label: 'All' },
@@ -102,6 +132,36 @@ const STATUS_FILTERS = [
 function fmtDate(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/* ═══════════════════════ Status pipeline strip ═══════════════════════ */
+
+function PipelineStrip({ current }: { current?: string }) {
+  if (current === 'cancelled') {
+    return <StampBadge tone="danger">Cancelled</StampBadge>;
+  }
+  const curIdx = current ? PIPELINE_STAGES.findIndex((s) => s.value === current) : -1;
+  return (
+    <div
+      className="flex items-center gap-1.5 overflow-x-auto pb-1"
+      role="list"
+      aria-label="Order status pipeline"
+    >
+      {PIPELINE_STAGES.map((st, i) => {
+        const reached = curIdx < 0 || i <= curIdx;
+        return (
+          <Fragment key={st.value}>
+            {i > 0 && (
+              <span className="h-px w-5 shrink-0 bg-[var(--border-input)]" aria-hidden="true" />
+            )}
+            <span role="listitem" className={reached ? undefined : 'opacity-45'}>
+              <StampBadge tone={reached ? st.tone : 'slate'}>{st.label}</StampBadge>
+            </span>
+          </Fragment>
+        );
+      })}
+    </div>
+  );
 }
 
 /* ═══════════════════════ Line item editor ═══════════════════════ */
@@ -190,7 +250,7 @@ function LineEditor({
             </span>
           )}
           {open && results.length > 0 && (
-            <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border-input)] bg-white shadow-xl">
+            <ul className="paper-texture absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border-input)] shadow-xl">
               {results.map((p) => (
                 <li key={p.id}>
                   <button
@@ -199,7 +259,7 @@ function LineEditor({
                     className="flex min-h-[44px] w-full items-center justify-between gap-2 px-3.5 py-2 text-left text-[15px] hover:bg-[var(--surface-alt)]"
                   >
                     <span className="truncate font-semibold">{p.name}</span>
-                    <span className="shrink-0 text-xs text-[var(--ink-muted)]">
+                    <span className="tnum shrink-0 text-xs text-[var(--ink-muted)]">
                       {p.sku ?? ''} · stock {p.quantity_on_hand}
                     </span>
                   </button>
@@ -284,9 +344,15 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /* Suppliers (Chapter One) */
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  /* Reorder suggestions */
+  const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
+  const [lowStockLoading, setLowStockLoading] = useState(true);
+
   /* Create PO */
   const [createOpen, setCreateOpen] = useState(false);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierId, setSupplierId] = useState('');
   const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
@@ -345,6 +411,25 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    api<{ items: LowStockItem[]; nextCursor: string | null }>('/api/v1/products?lowStock=true&limit=8')
+      .then((d) => setLowStock(d.items ?? []))
+      .catch(() => {})
+      .finally(() => setLowStockLoading(false));
+  }, []);
+
+  /* Open the create sheet when arriving via a "new purchase order" cross-link (?new=1). */
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('new') === '1') {
+      setCreateOpen(true);
+      params.delete('new');
+      const qs = params.toString();
+      window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    }
+  }, []);
+
   const totals = useMemo(
     () =>
       lines.reduce(
@@ -356,6 +441,20 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
   const totalQty = useMemo(
     () => lines.reduce((s, l) => s + (parseInt(l.qty, 10) || 0), 0),
     [lines]
+  );
+
+  const reorderItems = useMemo(
+    () =>
+      lowStock.map((it) => ({
+        icon: 'inventory_2',
+        label: it.name,
+        detail: `${it.quantityOnHand} on hand · reorder at ${it.reorderLevel}${
+          it.sku ? ` · ${it.sku}` : ''
+        }${it.supplierName ? ` · ${it.supplierName}` : ''}`,
+        href: '/purchases?new=1',
+        tone: 'gold' as const,
+      })),
+    [lowStock]
   );
 
   /* ── Create ── */
@@ -463,97 +562,202 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
 
   return (
     <motion.div variants={listVariants} initial="hidden" animate="show">
-      <PageHeader
-        title="Purchases"
-        subtitle="Purchase orders to suppliers"
-        actions={
+      {/* Page header */}
+      <motion.div variants={riseVariants} className="mb-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="chapter-eyebrow">The ledger</p>
+            <h1 className="font-display text-[28px] leading-tight text-[var(--ink)] sm:text-[32px]">
+              Purchases
+            </h1>
+            <p className="mt-1 text-sm text-[var(--ink-muted)]">
+              Purchase orders to suppliers — draft, order, receive.
+            </p>
+          </div>
           <PrimaryButton onClick={openCreate}>
             <Icon name="add" size={20} /> New purchase order
           </PrimaryButton>
-        }
-      />
-
-      {/* Status filter */}
-      <motion.div variants={riseVariants} className="mb-5 flex flex-wrap gap-2">
-        {STATUS_FILTERS.map((s) => (
-          <button
-            key={s.value}
-            type="button"
-            onClick={() => setStatusFilter(s.value)}
-            aria-pressed={statusFilter === s.value}
-            className={`inline-flex min-h-[44px] items-center rounded-full px-4 text-sm font-semibold transition ${
-              statusFilter === s.value
-                ? 'bg-[var(--wine)] text-white'
-                : 'bg-[var(--surface)] text-[var(--ink-muted)] border border-[var(--border)] hover:bg-[var(--surface-alt)]'
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
+        </div>
+        <div className="chapter-rule" aria-hidden="true" />
       </motion.div>
 
-      {/* List */}
-      {loading ? (
-        <SkeletonRows rows={6} />
-      ) : error ? (
-        <ErrorState message={error} onRetry={() => fetchOrders()} />
-      ) : orders.length === 0 ? (
-        <EmptyState
-          icon="shopping_bag"
-          title="No purchase orders"
-          body={
-            statusFilter
-              ? 'Nothing with this status. Try a different filter.'
-              : 'Create your first purchase order to restock from a supplier.'
-          }
+      {/* ── Chapter One — Suppliers ── */}
+      {suppliers.length > 0 && (
+        <section aria-label="Suppliers" className="mb-10">
+          <ChapterHeader
+            eyebrow="Chapter One"
+            title="Suppliers"
+            number={1}
+            action={
+              <span className="tnum shrink-0 text-sm font-bold text-[var(--ink-muted)]">
+                {suppliers.length} supplier{suppliers.length === 1 ? '' : 's'}
+              </span>
+            }
+          />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {suppliers.map((s) => (
+              <SpineCard key={s.id} tone={s.active ? 'olive' : 'slate'}>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-display min-w-0 flex-1 text-[17px] leading-snug text-[var(--ink)]">
+                    {s.name}
+                  </h3>
+                  <StampBadge tone={s.active ? 'olive' : 'danger'}>
+                    {s.active ? 'Active' : 'Inactive'}
+                  </StampBadge>
+                </div>
+                <div className="mt-3 flex flex-col gap-1.5 text-[13px] text-[var(--ink-muted)]">
+                  {s.contactPerson && (
+                    <p className="flex items-center gap-2">
+                      <Icon name="person" size={16} className="shrink-0" />
+                      <span className="truncate">{s.contactPerson}</span>
+                    </p>
+                  )}
+                  {s.phone && (
+                    <p className="flex items-center gap-2">
+                      <Icon name="phone" size={16} className="shrink-0" />
+                      <span className="tnum truncate">{s.phone}</span>
+                    </p>
+                  )}
+                  {s.email && (
+                    <p className="flex items-center gap-2">
+                      <Icon name="mail" size={16} className="shrink-0" />
+                      <span className="truncate">{s.email}</span>
+                    </p>
+                  )}
+                  {s.address && (
+                    <p className="flex items-start gap-2">
+                      <Icon name="location_on" size={16} className="mt-0.5 shrink-0" />
+                      <span className="line-clamp-2">{s.address}</span>
+                    </p>
+                  )}
+                  {!s.contactPerson && !s.phone && !s.email && !s.address && (
+                    <p className="italic">No contact details on file.</p>
+                  )}
+                </div>
+              </SpineCard>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Chapter Two — Purchase orders ── */}
+      <section aria-label="Purchase orders" className="mb-10">
+        <ChapterHeader
+          eyebrow="Chapter Two"
+          title="Purchase orders"
+          number={2}
           action={
             <PrimaryButton onClick={openCreate}>
               <Icon name="add" size={20} /> New purchase order
             </PrimaryButton>
           }
         />
-      ) : (
-        <>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {orders.map((o, i) => (
-              <motion.button
-                key={o.id}
-                type="button"
-                variants={riseVariants}
-                custom={i}
-                onClick={() => openDetail(o)}
-                className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 text-left shadow-[var(--shadow)] transition hover:-translate-y-0.5 hover:shadow-lg"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--wine-tint)] text-[var(--wine)]">
-                      <Icon name="shopping_bag" size={22} />
-                    </span>
-                    <div>
-                      <p className="font-bold text-[var(--ink)]">
+
+        {/* Status pipeline */}
+        <motion.div variants={riseVariants} className="mb-5">
+          <PipelineStrip />
+        </motion.div>
+
+        {/* Status filter */}
+        <motion.div variants={riseVariants} className="mb-5 flex flex-wrap gap-2">
+          {STATUS_FILTERS.map((s) => (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => setStatusFilter(s.value)}
+              aria-pressed={statusFilter === s.value}
+              className={`inline-flex min-h-[44px] items-center rounded-full px-4 text-sm font-semibold transition ${
+                statusFilter === s.value
+                  ? 'bg-[var(--wine)] text-white'
+                  : 'border border-[var(--border)] bg-[var(--surface)] text-[var(--ink-muted)] hover:bg-[var(--surface-alt)]'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </motion.div>
+
+        {/* List */}
+        {loading ? (
+          <SkeletonRows rows={6} />
+        ) : error ? (
+          <ErrorState message={error} onRetry={() => fetchOrders()} />
+        ) : orders.length === 0 ? (
+          <EmptyState
+            icon="shopping_bag"
+            title="No purchase orders"
+            body={
+              statusFilter
+                ? 'Nothing with this status. Try a different filter.'
+                : 'Create your first purchase order to restock from a supplier.'
+            }
+            action={
+              <PrimaryButton onClick={openCreate}>
+                <Icon name="add" size={20} /> New purchase order
+              </PrimaryButton>
+            }
+          />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {orders.map((o, i) => (
+                <motion.button
+                  key={o.id}
+                  type="button"
+                  variants={riseVariants}
+                  custom={i}
+                  onClick={() => openDetail(o)}
+                  className={`spine-card spine-${STATUS_SPINES[o.status] ?? 'wine'} min-h-[44px] p-4 text-left transition hover:-translate-y-0.5 hover:shadow-lg`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-mono text-[15px] font-bold text-[var(--ink)]">
                         {o.referenceNumber || 'PO'}
                       </p>
-                      <p className="truncate text-xs text-[var(--ink-muted)]">
+                      <p className="mt-0.5 truncate text-xs text-[var(--ink-muted)]">
                         {o.supplierName ?? 'Unknown supplier'} · {fmtDate(o.orderedAt)}
                       </p>
                     </div>
+                    <StampBadge tone={STATUS_STAMPS[o.status] ?? 'slate'}>
+                      {STATUS_LABELS[o.status] ?? o.status}
+                    </StampBadge>
                   </div>
-                  <Badge tone={STATUS_TONES[o.status] ?? 'gray'}>
-                    {STATUS_LABELS[o.status] ?? o.status}
-                  </Badge>
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t border-[var(--border)] pt-3">
-                  <span className="text-xs font-semibold text-[var(--ink-muted)]">
-                    {o.itemCount} line{o.itemCount === 1 ? '' : 's'}
-                  </span>
-                  <span className="tnum text-lg font-bold">{formatMoney(o.totalCost)}</span>
-                </div>
-              </motion.button>
-            ))}
-          </div>
-          {cursor && <LoadMore onLoad={() => fetchOrders(cursor)} loading={loadingMore} />}
-        </>
-      )}
+                  <div className="mt-3 flex items-center justify-between border-t border-[var(--border)] pt-3">
+                    <span className="text-xs font-semibold text-[var(--ink-muted)]">
+                      {o.itemCount} line{o.itemCount === 1 ? '' : 's'}
+                    </span>
+                    <span className="tnum text-lg font-bold text-[var(--ink)]">
+                      {formatMoney(o.totalCost)}
+                    </span>
+                  </div>
+                </motion.button>
+              ))}
+            </div>
+            {cursor && <LoadMore onLoad={() => fetchOrders(cursor)} loading={loadingMore} />}
+          </>
+        )}
+      </section>
+
+      {/* ── Reorder suggestions ── */}
+      <section aria-label="Reorder suggestions">
+        <ChapterHeader
+          eyebrow="Needs attention"
+          title="Reorder suggestions"
+          action={
+            <a
+              href="/inventory?filter=low"
+              className="inline-flex min-h-[44px] items-center text-sm font-bold text-[var(--wine)] underline underline-offset-4"
+            >
+              View all low stock
+            </a>
+          }
+        />
+        {lowStockLoading ? (
+          <SkeletonRows rows={3} />
+        ) : (
+          <AttentionPanel items={reorderItems} />
+        )}
+      </section>
 
       {/* ── Create PO sheet ── */}
       <Sheet open={createOpen} onClose={() => setCreateOpen(false)} title="New purchase order">
@@ -584,12 +788,12 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
           </Field>
           <LineEditor lines={lines} setLines={setLines} />
           {lines.length > 0 && (
-            <div className="rounded-xl bg-[var(--surface-alt)] px-4 py-3">
+            <div className="paper-texture rounded-xl border border-[var(--border)] px-4 py-3">
               <div className="flex justify-between text-sm">
                 <span className="text-[var(--ink-muted)]">Total units</span>
                 <span className="tnum font-bold">{totalQty}</span>
               </div>
-              <div className="mt-1 flex justify-between">
+              <div className="receipt-dash mt-2 flex justify-between pt-2">
                 <span className="text-[var(--ink-muted)]">Total cost</span>
                 <span className="tnum text-lg font-bold">{formatMoney(totals)}</span>
               </div>
@@ -622,53 +826,68 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
           <SkeletonRows rows={5} />
         ) : detail ? (
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-display text-xl text-[var(--ink)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-mono text-lg font-bold text-[var(--ink)]">
                   {detail.referenceNumber || 'Purchase order'}
                 </p>
-                <p className="text-sm text-[var(--ink-muted)]">
+                <p className="mt-0.5 text-sm text-[var(--ink-muted)]">
                   {detail.supplierName} · {fmtDate(detail.orderedAt)}
                 </p>
               </div>
-              <Badge tone={STATUS_TONES[detail.status] ?? 'gray'}>
-                {STATUS_LABELS[detail.status] ?? detail.status}
-              </Badge>
             </div>
 
-            <div className="rounded-xl border border-[var(--border)]">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--border)] text-[12px] uppercase tracking-wide text-[var(--ink-muted)]">
-                    <th scope="col" className="px-4 py-2.5 font-semibold">Item</th>
-                    <th scope="col" className="px-4 py-2.5 text-right font-semibold">Qty</th>
-                    <th scope="col" className="px-4 py-2.5 text-right font-semibold">Unit cost</th>
-                    <th scope="col" className="px-4 py-2.5 text-right font-semibold">Line total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.items.map((it) => (
-                    <tr key={it.id} className="border-b border-[var(--border)] last:border-0">
-                      <td className="px-4 py-2.5 font-semibold">{it.productName}</td>
-                      <td className="tnum px-4 py-2.5 text-right">{it.quantityOrdered}</td>
-                      <td className="tnum px-4 py-2.5 text-right">{formatMoney(it.unitCost)}</td>
-                      <td className="tnum px-4 py-2.5 text-right font-bold">
-                        {formatMoney(it.quantityOrdered * it.unitCost)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <PipelineStrip current={detail.status} />
+
+            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4">
+              <p className="chapter-eyebrow pb-1 pt-3">Line items</p>
+              {detail.items.map((it) => (
+                <div
+                  key={it.id}
+                  className="ledger-row flex items-center justify-between gap-3 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-bold text-[var(--ink)]">
+                      {it.productName}
+                    </p>
+                    <p className="tnum mt-0.5 text-xs text-[var(--ink-muted)]">
+                      {it.quantityOrdered} × {formatMoney(it.unitCost)}
+                    </p>
+                  </div>
+                  <p className="tnum shrink-0 text-[15px] font-bold text-[var(--ink)]">
+                    {formatMoney(it.quantityOrdered * it.unitCost)}
+                  </p>
+                </div>
+              ))}
             </div>
 
-            <div className="flex justify-between rounded-xl bg-[var(--surface-alt)] px-4 py-3">
+            <div className="paper-texture flex items-center justify-between rounded-xl border border-[var(--border)] px-4 py-3">
               <span className="font-semibold text-[var(--ink-muted)]">Total cost</span>
-              <span className="tnum text-xl font-bold">{formatMoney(detail.totalCost)}</span>
+              <span className="tnum text-xl font-bold text-[var(--ink)]">
+                {formatMoney(detail.totalCost)}
+              </span>
             </div>
 
             {detail.notes && (
               <p className="rounded-xl bg-[var(--info-bg)] px-4 py-3 text-sm text-[var(--info)]">
                 {detail.notes}
+              </p>
+            )}
+
+            {detail.status === 'ordered' && (
+              <p className="flex items-start gap-2.5 rounded-xl border border-[var(--olive)]/30 bg-[var(--olive-bg)] px-4 py-3 text-[13px] leading-relaxed text-[var(--ink)]">
+                <Icon name="warehouse" size={20} className="mt-0.5 shrink-0 text-[var(--olive)]" />
+                <span>
+                  Received stock lands in the <strong>warehouse</strong>. Move it to the shop shelf
+                  with a transfer in{' '}
+                  <a
+                    href="/inventory"
+                    className="font-bold text-[var(--wine)] underline underline-offset-2"
+                  >
+                    Inventory
+                  </a>
+                  .
+                </span>
               </p>
             )}
 
@@ -680,13 +899,16 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
             </p>
 
             {detail.status === 'ordered' && (
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <SecondaryButton onClick={() => setCancelConfirm(true)} className="flex-1">
+              <div className="flex flex-col gap-2">
+                <PrimaryButton
+                  onClick={() => setReceiveConfirm(true)}
+                  className="min-h-[52px] text-base"
+                >
+                  <Icon name="warehouse" size={22} /> Receive into warehouse
+                </PrimaryButton>
+                <SecondaryButton onClick={() => setCancelConfirm(true)}>
                   <Icon name="cancel" size={20} /> Cancel order
                 </SecondaryButton>
-                <PrimaryButton onClick={() => setReceiveConfirm(true)} className="flex-1">
-                  <Icon name="check_circle" size={20} /> Receive goods
-                </PrimaryButton>
               </div>
             )}
           </div>
@@ -698,14 +920,15 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
         open={receiveConfirm}
         onClose={() => setReceiveConfirm(false)}
         onConfirm={doReceive}
-        title="Receive goods?"
+        title="Receive goods into the warehouse?"
         body={
           <>
-            All line items will be added to stock and item costs updated to the
-            weighted average. Total: <strong className="tnum">{formatMoney(detail?.totalCost ?? 0)}</strong>.
+            All line items will be received into the <strong>warehouse</strong> and item costs
+            updated to the weighted average. Total:{' '}
+            <strong className="tnum">{formatMoney(detail?.totalCost ?? 0)}</strong>.
           </>
         }
-        confirmLabel="Receive goods"
+        confirmLabel="Receive into warehouse"
         busy={actionBusy}
       />
       <ConfirmDialog

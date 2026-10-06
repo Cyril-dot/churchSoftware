@@ -14,11 +14,14 @@ import {
   Badge,
   Field,
   inputClass,
-  StatCard,
   EmptyState,
   ErrorState,
   SkeletonCards,
   SkeletonRows,
+  ChapterHeader,
+  StampBadge,
+  SpineCard,
+  KpiCard,
 } from '@/components/ui';
 
 /* ═══════════════════════ Types ═══════════════════════ */
@@ -69,11 +72,12 @@ const METHOD_ICONS: Record<string, string> = {
   other: 'wallet',
 };
 
+/* Wine / gold / olive palette for the method bars */
 const METHOD_TONES: Record<string, string> = {
   cash: 'bg-[var(--gold)]',
   card: 'bg-[var(--wine)]',
-  mobile_money: 'bg-[var(--success)]',
-  bank_transfer: 'bg-[var(--info)]',
+  mobile_money: 'bg-[var(--olive)]',
+  bank_transfer: 'bg-[var(--brass)]',
   other: 'bg-[var(--ink-muted)]',
 };
 
@@ -134,18 +138,134 @@ function CountUp({ value, format }: { value: number; format: (n: number) => stri
   return <span className="tnum">{display}</span>;
 }
 
+/* ═══════════════════════ Report library ═══════════════════════ */
+
+type SpineTone = 'wine' | 'gold' | 'olive' | 'slate' | 'brass' | 'terracotta';
+
+interface ReportDef {
+  id: string;
+  icon: string;
+  name: string;
+  desc: string;
+  tone: SpineTone;
+  openable: boolean;
+}
+
+interface ChapterDef {
+  chapter: string;
+  title: string;
+  reports: ReportDef[];
+}
+
+/* The Sales and Profit reports below share one data-backed report view
+   (the API exposes sales + profit in the same endpoints). Inventory, Staff
+   and Deposits reports are marked "Coming soon" — no fake data is invented. */
+const REPORT_LIBRARY: ChapterDef[] = [
+  {
+    chapter: 'Chapter One',
+    title: 'Sales reports',
+    reports: [
+      {
+        id: 'sales-overview',
+        icon: 'payments',
+        name: 'Sales overview',
+        desc: 'Revenue, transactions and payment-method split for any period.',
+        tone: 'wine',
+        openable: true,
+      },
+    ],
+  },
+  {
+    chapter: 'Chapter Two',
+    title: 'Profit reports',
+    reports: [
+      {
+        id: 'profit-summary',
+        icon: 'trending_up',
+        name: 'Profit summary',
+        desc: 'Gross profit, cost of goods sold and discounts given.',
+        tone: 'gold',
+        openable: true,
+      },
+    ],
+  },
+  {
+    chapter: 'Chapter Three',
+    title: 'Inventory reports',
+    reports: [
+      {
+        id: 'stock-movement',
+        icon: 'inventory_2',
+        name: 'Stock movement',
+        desc: 'Stock in, stock out and adjustments across locations.',
+        tone: 'olive',
+        openable: false,
+      },
+      {
+        id: 'low-stock',
+        icon: 'warning',
+        name: 'Low stock',
+        desc: 'Items running low or out of stock, by location.',
+        tone: 'olive',
+        openable: false,
+      },
+    ],
+  },
+  {
+    chapter: 'Chapter Four',
+    title: 'Staff reports',
+    reports: [
+      {
+        id: 'cashier-performance',
+        icon: 'group',
+        name: 'Cashier performance',
+        desc: 'Sales, transactions and discounts per cashier.',
+        tone: 'brass',
+        openable: false,
+      },
+    ],
+  },
+  {
+    chapter: 'Chapter Five',
+    title: 'Deposits reports',
+    reports: [
+      {
+        id: 'deposit-summary',
+        icon: 'account_balance',
+        name: 'Deposit summary',
+        desc: 'Bank deposits recorded for each deposit account.',
+        tone: 'slate',
+        openable: false,
+      },
+    ],
+  },
+];
+
+function pctDelta(cur: number, prev: number | undefined): { text: string; up: boolean } | null {
+  if (prev == null) return null;
+  if (prev === 0) return cur === 0 ? { text: '±0%', up: true } : { text: '+100%', up: true };
+  const d = ((cur - prev) / Math.abs(prev)) * 100;
+  return { text: `${d >= 0 ? '+' : ''}${d.toFixed(1)}%`, up: d >= 0 };
+}
+
 /* ═══════════════════════ Main component ═══════════════════════ */
 
 export default function ReportsClient({ user }: { user: SessionUser }) {
   void user;
 
+  /* Library ↔ report navigation (anti-dead-end: report always offers back) */
+  const [view, setView] = useState<'library' | 'report'>('library');
+  const [activeReport, setActiveReport] = useState<{ id: string; name: string } | null>(null);
+
   const [preset, setPreset] = useState<Preset>('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [compare, setCompare] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [prevSummary, setPrevSummary] = useState<Summary | null>(null);
   const [days, setDays] = useState<DayPoint[]>([]);
   const [methods, setMethods] = useState<MethodPoint[]>([]);
   const [topItems, setTopItems] = useState<TopItem[]>([]);
@@ -155,27 +275,52 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
     [preset, customFrom, customTo]
   );
 
+  /* Previous period of equal length, ending one millisecond before `from`. */
+  const prevRange = useMemo(() => {
+    if (!compare) return null;
+    const fromMs = new Date(from).getTime();
+    const toMs = new Date(to).getTime();
+    const len = Math.max(1, toMs - fromMs);
+    return {
+      from: new Date(fromMs - len).toISOString(),
+      to: new Date(fromMs - 1).toISOString(),
+    };
+  }, [compare, from, to]);
+
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const q = new URLSearchParams({ from, to });
-      const [s, d, m, t] = await Promise.all([
+      const calls: Promise<unknown>[] = [
         api<Summary>(`/api/v1/reports/summary?${q}`),
         api<{ days: DayPoint[] }>(`/api/v1/reports/sales-by-day?${q}`),
         api<{ methods: MethodPoint[] }>(`/api/v1/reports/by-payment?${q}`),
         api<{ items: TopItem[] }>(`/api/v1/reports/top-items?${q}&limit=10`),
-      ]);
+      ];
+      /* Same contract, same params — only the date window differs. */
+      if (prevRange) {
+        const pq = new URLSearchParams({ from: prevRange.from, to: prevRange.to });
+        calls.push(api<Summary>(`/api/v1/reports/summary?${pq}`));
+      }
+      const results = await Promise.all(calls);
+      const [s, d, m, t] = results as [
+        Summary,
+        { days: DayPoint[] },
+        { methods: MethodPoint[] },
+        { items: TopItem[] },
+      ];
       setSummary(s);
       setDays(d.days ?? []);
       setMethods(m.methods ?? []);
       setTopItems(t.items ?? []);
+      setPrevSummary(prevRange ? (results[4] as Summary) : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load reports.');
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, [from, to, prevRange]);
 
   useEffect(() => {
     fetchAll();
@@ -197,17 +342,126 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
     };
   }, [summary, cashMethod]);
 
+  const openReport = (r: ReportDef) => {
+    setActiveReport({ id: r.id, name: r.name });
+    setView('report');
+    window.scrollTo({ top: 0 });
+  };
+
+  const backToLibrary = () => {
+    setView('library');
+    setActiveReport(null);
+    window.scrollTo({ top: 0 });
+  };
+
+  /* CSV export — built from already-fetched data; no new API calls. */
+  const exportCsv = () => {
+    if (!summary) return;
+    const period = `${new Date(from).toLocaleDateString('en-GH')} – ${new Date(to).toLocaleDateString('en-GH')}`;
+    const rows: (string | number)[][] = [
+      ['Report', activeReport?.name ?? 'Sales overview'],
+      ['Period', period],
+      [],
+      ['Metric', 'Value'],
+      ['Revenue', summary.revenue],
+      ['Transactions', summary.transactions],
+      ['Gross profit', summary.grossProfit],
+      ['Cost of goods sold', summary.cogs],
+      ['Discounts given', summary.discounts],
+      [],
+      ['Day', 'Revenue', 'Transactions'],
+      ...days.map((d) => [d.day, d.revenue, d.transactions]),
+      [],
+      ['Payment method', 'Revenue', 'Transactions'],
+      ...methods.map((m) => [METHOD_LABELS[m.paymentMethod] ?? m.paymentMethod, m.revenue, m.transactions]),
+      [],
+      ['Top items — Item', 'Qty sold', 'Revenue'],
+      ...topItems.map((t) => [t.productName, t.quantity, t.revenue]),
+    ];
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `report-${from.slice(0, 10)}-to-${to.slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  /* ─────────────── Library home ─────────────── */
+
+  if (view === 'library') {
+    return (
+      <motion.div variants={listVariants} initial="hidden" animate="show">
+        <PageHeader
+          title="Reports"
+          subtitle="Pick a report to open — sales, profit, stock, staff and deposits"
+        />
+        {REPORT_LIBRARY.map((ch) => (
+          <section key={ch.chapter} aria-label={ch.title} className="mb-7 last:mb-0">
+            <ChapterHeader eyebrow={ch.chapter} title={ch.title} />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {ch.reports.map((r) => (
+                <SpineCard key={r.id} tone={r.tone} className={!r.openable ? 'opacity-70' : ''}>
+                  <div className="flex items-start gap-3.5">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-alt)] text-[var(--wine)]">
+                      <Icon name={r.icon} size={24} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-display text-lg leading-tight text-[var(--ink)]">{r.name}</h3>
+                        {!r.openable && <StampBadge tone="slate">Coming soon</StampBadge>}
+                      </div>
+                      <p className="mt-1 text-sm text-[var(--ink-muted)]">{r.desc}</p>
+                    </div>
+                  </div>
+                  {r.openable && (
+                    <div className="mt-4 flex justify-end">
+                      <SecondaryButton onClick={() => openReport(r)}>
+                        Open <Icon name="arrow_forward" size={20} />
+                      </SecondaryButton>
+                    </div>
+                  )}
+                </SpineCard>
+              ))}
+            </div>
+          </section>
+        ))}
+      </motion.div>
+    );
+  }
+
+  /* ─────────────── Report view ─────────────── */
+
+  const revenueDelta = pctDelta(summary?.revenue ?? 0, prevSummary?.revenue);
+  const txnsDelta = pctDelta(summary?.transactions ?? 0, prevSummary?.transactions);
+  const profitDelta = pctDelta(summary?.grossProfit ?? 0, prevSummary?.grossProfit);
+  const discountsDelta = pctDelta(summary?.discounts ?? 0, prevSummary?.discounts);
+
   return (
     <motion.div variants={listVariants} initial="hidden" animate="show">
+      {/* Breadcrumb back — anti-dead-end */}
+      <nav aria-label="Breadcrumb" className="mb-4">
+        <button
+          type="button"
+          onClick={backToLibrary}
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-3 text-sm font-bold text-[var(--wine)] transition hover:bg-[var(--wine-tint)]"
+        >
+          <Icon name="arrow_back" size={20} /> Reports library
+        </button>
+      </nav>
+
       <PageHeader
-        title="Reports"
-        subtitle="Revenue, profit and best-sellers at a glance"
+        title={activeReport?.name ?? 'Sales overview'}
+        subtitle={compare ? 'Compared with the previous equal-length period' : 'Revenue, profit and best-sellers at a glance'}
       />
 
-      {/* Date range */}
+      {/* Warm filter bar */}
       <motion.div
         variants={riseVariants}
-        className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow)]"
+        className="paper-texture mb-5 rounded-2xl border border-[var(--border)] p-4 shadow-[var(--shadow)]"
       >
         <div className="flex flex-wrap items-center gap-2">
           {PRESETS.map((p) => (
@@ -225,6 +479,21 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
               {p.label}
             </button>
           ))}
+          {/* Compare-to-previous toggle */}
+          <button
+            type="button"
+            role="switch"
+            aria-checked={compare}
+            onClick={() => setCompare((c) => !c)}
+            className={`inline-flex min-h-[44px] items-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
+              compare
+                ? 'border-[var(--gold)] bg-[var(--gold)]/15 text-[var(--warning)]'
+                : 'border-[var(--border-input)] bg-[var(--surface)] text-[var(--ink-muted)] hover:bg-[var(--surface-alt)]'
+            }`}
+          >
+            <Icon name="compare_arrows" size={20} />
+            Compare {compare ? 'on' : 'off'}
+          </button>
           {preset === 'custom' && (
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-end">
               <div className="flex-1">
@@ -252,9 +521,14 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
               </div>
             </div>
           )}
-          <SecondaryButton onClick={fetchAll} className="ml-auto">
-            <Icon name="refresh" size={20} /> Refresh
-          </SecondaryButton>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <SecondaryButton onClick={exportCsv} disabled={!summary}>
+              <Icon name="download" size={20} /> CSV
+            </SecondaryButton>
+            <SecondaryButton onClick={fetchAll}>
+              <Icon name="refresh" size={20} /> Refresh
+            </SecondaryButton>
+          </div>
         </div>
       </motion.div>
 
@@ -267,37 +541,48 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
         <ErrorState message={error} onRetry={fetchAll} />
       ) : summary ? (
         <>
-          {/* Stat cards */}
+          {/* KPI cards with deltas when comparing */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard
+            <KpiCard
               icon="payments"
               label="Revenue"
               tone="wine"
               value={<CountUp value={summary.revenue} format={formatMoney} />}
-              sub={`${summary.transactions} transaction${summary.transactions === 1 ? '' : 's'}`}
+              delta={revenueDelta?.text}
+              deltaUp={revenueDelta?.up}
             />
-            <StatCard
+            <KpiCard
               icon="receipt_long"
               label="Transactions"
               tone="gold"
               value={<CountUp value={summary.transactions} format={(n) => String(Math.round(n))} />}
-              sub="Completed sales"
+              delta={txnsDelta?.text}
+              deltaUp={txnsDelta?.up}
             />
-            <StatCard
+            <KpiCard
               icon="trending_up"
               label="Gross profit"
-              tone="green"
+              tone="olive"
               value={<CountUp value={summary.grossProfit} format={formatMoney} />}
-              sub={`COGS ${formatMoney(summary.cogs)}`}
+              delta={profitDelta?.text}
+              deltaUp={profitDelta?.up}
             />
-            <StatCard
+            <KpiCard
               icon="percent"
               label="Discounts given"
-              tone="red"
+              tone="slate"
               value={<CountUp value={summary.discounts} format={formatMoney} />}
-              sub="Total discount value"
+              delta={discountsDelta?.text}
+              deltaUp={discountsDelta?.up}
             />
           </div>
+          <p className="tnum mt-2 text-[13px] text-[var(--ink-muted)]">
+            {summary.transactions} transaction{summary.transactions === 1 ? '' : 's'} · COGS{' '}
+            {formatMoney(summary.cogs)}
+            {compare && prevSummary && (
+              <> · previous period revenue {formatMoney(prevSummary.revenue)}</>
+            )}
+          </p>
 
           {/* Revenue by day */}
           <motion.section
@@ -397,16 +682,12 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
             </motion.section>
 
             {/* Cash-up */}
-            <motion.section
-              variants={riseVariants}
-              aria-label="End of day cash-up"
-              className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6"
-            >
+            <SpineCard tone="gold" aria-label="End of day cash-up">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="font-display text-lg text-[var(--ink)]">Cash-up summary</h2>
-                <Badge tone={preset === 'today' ? 'green' : 'gray'}>
+                <StampBadge tone={preset === 'today' ? 'olive' : 'slate'}>
                   {preset === 'today' ? 'Today' : 'Selected period'}
-                </Badge>
+                </StampBadge>
               </div>
               {cashUp ? (
                 <dl className="mt-4 space-y-3 text-[15px]">
@@ -438,7 +719,7 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
               ) : (
                 <p className="mt-4 text-sm text-[var(--ink-muted)]">No data for this period.</p>
               )}
-            </motion.section>
+            </SpineCard>
           </div>
 
           {/* Top items */}
@@ -454,7 +735,7 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[560px] text-left text-[15px]">
                   <thead>
-                    <tr className="border-b border-[var(--border)] text-[13px] uppercase tracking-wide text-[var(--ink-muted)]">
+                    <tr className="ledger-row text-[13px] uppercase tracking-wide text-[var(--ink-muted)]">
                       <th scope="col" className="py-3 pr-4 font-semibold">#</th>
                       <th scope="col" className="py-3 pr-4 font-semibold">Item</th>
                       <th scope="col" className="py-3 pr-4 text-right font-semibold">Qty sold</th>
@@ -463,7 +744,7 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
                   </thead>
                   <tbody>
                     {topItems.map((t, i) => (
-                      <tr key={t.productId} className="border-b border-[var(--border)] last:border-0">
+                      <tr key={t.productId} className="ledger-row">
                         <td className="py-3 pr-4">
                           <span
                             className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold ${
