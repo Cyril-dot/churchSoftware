@@ -82,11 +82,17 @@ const patchProductSchema = z
       .transform((v) => (v === '' ? null : v))
       .optional(),
     coverPhotoUrl: z.string().trim().max(2000000).nullish(),
+    reference: z.string().trim().max(200).nullish()
+      .transform((v) => (v === '' ? null : v))
+      .optional(),
     productType: z.string().trim().max(50).optional(),
     categoryId: z.string().uuid().nullish(),
     supplierId: z.string().uuid().nullish(),
     costPrice: z.number().min(0).optional(),
     sellingPrice: z.number().min(0).optional(),
+    priceBishop: z.number().min(0).nullish(),
+    priceSonsOfProphet: z.number().min(0).nullish(),
+    pricePastorDeji: z.number().min(0).nullish(),
     reorderLevel: z.number().int().min(0).optional(),
     quantityOnHand: z.never().optional(),
     quantity_on_hand: z.never().optional(),
@@ -99,11 +105,15 @@ const COL_MAP: Record<string, string> = {
   sku: 'sku',
   barcode: 'barcode',
   coverPhotoUrl: 'cover_photo_url',
+  reference: 'reference',
   productType: 'product_type',
   categoryId: 'category_id',
   supplierId: 'supplier_id',
   costPrice: 'cost_price',
   sellingPrice: 'selling_price',
+  priceBishop: 'price_bishop',
+  priceSonsOfProphet: 'price_sons_of_prophet',
+  pricePastorDeji: 'price_pastor_deji',
   reorderLevel: 'reorder_level',
 };
 

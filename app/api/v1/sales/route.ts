@@ -91,12 +91,17 @@ export const GET = handle(async (req) => {
   });
 });
 
+const PRICE_TIERS = ['standard', 'bishop', 'sons_of_prophet', 'pastor_deji'] as const;
+
 const createSaleSchema = z.object({
   items: z
     .array(
       z.object({
         productId: z.string().uuid(),
         quantity: z.number().int().min(1).max(10_000),
+        // Price list tier for this line; server resolves the tier price
+        // (falling back to the standard price). Defaults to standard.
+        priceTier: z.enum(PRICE_TIERS).optional().default('standard'),
       })
     )
     .min(1)
@@ -114,7 +119,11 @@ export const POST = handle(async (req) => {
   const body = createSaleSchema.parse(await req.json());
   const sql = getSql();
 
-  const itemsJson = body.items.map((i) => ({ productId: i.productId, quantity: i.quantity }));
+  const itemsJson = body.items.map((i) => ({
+    productId: i.productId,
+    quantity: i.quantity,
+    priceTier: i.priceTier,
+  }));
   const rows = (await sql`
     SELECT record_sale(
       ${user.id},
