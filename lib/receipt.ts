@@ -10,6 +10,7 @@ export interface ReceiptItem {
   unitPrice: number;
   unitCost: number | null;
   lineTotal: number;
+  priceTier: string;
 }
 
 export async function getReceipt(sql: Sql, saleId: string, includeCost: boolean) {
@@ -28,7 +29,7 @@ export async function getReceipt(sql: Sql, saleId: string, includeCost: boolean)
 
   const itemRows = (await sql`
     SELECT si.id, si.product_id, p.name AS product_name, si.quantity,
-           si.unit_price, si.unit_cost
+           si.unit_price, si.unit_cost, si.price_tier
     FROM sale_items si
     JOIN products p ON p.id = si.product_id
     WHERE si.sale_id = ${saleId}
@@ -51,6 +52,7 @@ export async function getReceipt(sql: Sql, saleId: string, includeCost: boolean)
     unitPrice: num(i.unit_price),
     unitCost: includeCost ? num(i.unit_cost) : null,
     lineTotal: num(i.unit_price) * (i.quantity as number),
+    priceTier: (i.price_tier as string) ?? 'standard',
   }));
 
   const s = settings[0] ?? {};

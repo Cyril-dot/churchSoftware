@@ -36,10 +36,14 @@ interface Product {
   sku: string | null;
   barcode: string | null;
   coverPhotoUrl: string | null;
+  reference: string | null;
   productType: string;
   categoryId: string | null;
   categoryName: string | null;
   sellingPrice: number;
+  priceBishop: number | null;
+  priceSonsOfProphet: number | null;
+  pricePastorDeji: number | null;
   quantityOnHand: number;
   quantityShop: number;
   quantityWarehouse: number;
@@ -146,12 +150,16 @@ interface ItemFormState {
   authorOrBrand: string;
   sku: string;
   barcode: string;
+  reference: string;
   coverPhotoUrl: string;
   productType: string;
   categoryId: string;
   supplierId: string;
   costPrice: string;
   sellingPrice: string;
+  priceBishop: string;
+  priceSonsOfProphet: string;
+  pricePastorDeji: string;
   reorderLevel: string;
   quantityShop: string;
   quantityWarehouse: string;
@@ -162,12 +170,16 @@ const EMPTY_FORM: ItemFormState = {
   authorOrBrand: '',
   sku: '',
   barcode: '',
+  reference: '',
   coverPhotoUrl: '',
   productType: 'bishop_books',
   categoryId: '',
   supplierId: '',
   costPrice: '',
   sellingPrice: '',
+  priceBishop: '',
+  priceSonsOfProphet: '',
+  pricePastorDeji: '',
   reorderLevel: '0',
   quantityShop: '0',
   quantityWarehouse: '0',
@@ -179,12 +191,16 @@ function toForm(p: Product): ItemFormState {
     authorOrBrand: p.authorOrBrand ?? '',
     sku: p.sku ?? '',
     barcode: p.barcode ?? '',
+    reference: p.reference ?? '',
     coverPhotoUrl: p.coverPhotoUrl ?? '',
     productType: p.productType,
     categoryId: p.categoryId ?? '',
     supplierId: p.supplierId ?? '',
     costPrice: String(p.costPrice ?? ''),
     sellingPrice: String(p.sellingPrice),
+    priceBishop: p.priceBishop == null ? '' : String(p.priceBishop),
+    priceSonsOfProphet: p.priceSonsOfProphet == null ? '' : String(p.priceSonsOfProphet),
+    pricePastorDeji: p.pricePastorDeji == null ? '' : String(p.pricePastorDeji),
     reorderLevel: String(p.reorderLevel),
     quantityShop: String(p.quantityShop),
     quantityWarehouse: String(p.quantityWarehouse),
@@ -196,6 +212,26 @@ function marginPct(p: Product, canViewCost: boolean): number | null {
   if (!canViewCost || p.sellingPrice <= 0) return null;
   const cost = p.costPrice ?? 0;
   return Math.round(((p.sellingPrice - cost) / p.sellingPrice) * 100);
+}
+
+/* Compact read-only tier-price strip for the product card.
+   Only shows tiers that differ from the standard price — a blank tier
+   falls back to standard at sale time, so equal tiers are noise. */
+function TierStrip({ p }: { p: Product }) {
+  const tiers = [
+    { label: 'Bishop', value: p.priceBishop },
+    { label: 'S.P.', value: p.priceSonsOfProphet },
+    { label: 'Deji', value: p.pricePastorDeji },
+  ].filter(
+    (t): t is { label: string; value: number } =>
+      t.value != null && t.value !== p.sellingPrice
+  );
+  if (tiers.length === 0) return null;
+  return (
+    <p className="tnum mt-0.5 text-[11px] font-semibold text-[var(--ink-muted)]">
+      {tiers.map((t) => `${t.label} ${formatMoney(t.value)}`).join(' · ')}
+    </p>
+  );
 }
 
 /* ── Sort button (module scope: not recreated during render) ── */
@@ -541,6 +577,23 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
       setFormError('Selling price must be a valid non-negative number.');
       return;
     }
+    /* Tier prices are optional; blank means "fall back to standard". */
+    const badTier = (
+      [
+        ['Bishop price', form.priceBishop],
+        ['Sons of the Prophet price', form.priceSonsOfProphet],
+        ['Pastor Deji price', form.pricePastorDeji],
+      ] as const
+    ).find(([, raw]) => {
+      const t = raw.trim();
+      return t !== '' && (Number.isNaN(parseFloat(t)) || parseFloat(t) < 0);
+    });
+    if (badTier) {
+      setFormError(`${badTier[0]} must be a valid non-negative number, or left blank.`);
+      return;
+    }
+    const tierOrNull = (raw: string): number | null =>
+      raw.trim() === '' ? null : parseFloat(raw);
     setFormBusy(true);
     setFormError(null);
     try {
@@ -549,12 +602,16 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
         authorOrBrand: form.authorOrBrand.trim() || null,
         sku: form.sku.trim() || null,
         barcode: form.barcode.trim() || null,
+        reference: form.reference.trim().slice(0, 40) || null,
         coverPhotoUrl: form.coverPhotoUrl || null,
         productType: form.productType,
         categoryId: form.categoryId || null,
         supplierId: form.supplierId || null,
         costPrice: Math.max(0, parseFloat(form.costPrice) || 0),
         sellingPrice: selling,
+        priceBishop: tierOrNull(form.priceBishop),
+        priceSonsOfProphet: tierOrNull(form.priceSonsOfProphet),
+        pricePastorDeji: tierOrNull(form.pricePastorDeji),
         reorderLevel: Math.max(0, parseInt(form.reorderLevel, 10) || 0),
         ...(editing
           ? {}
@@ -813,7 +870,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                   size={18}
                   className={selected ? 'text-[var(--wine)]' : 'text-[var(--ink-muted)]'}
                 />
-                <span className="font-display truncate text-[16px] leading-tight text-[var(--ink)]">
+                <span className="font-display min-w-0 truncate text-[16px] leading-tight text-[var(--ink)]">
                   {t.label}
                 </span>
               </span>
@@ -977,6 +1034,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
                           <p className="tnum text-lg font-bold text-[var(--ink)]">
                             {formatMoney(p.sellingPrice)}
                           </p>
+                          <TierStrip p={p} />
                           {canViewCost && (
                             <p className="tnum text-xs text-[var(--ink-muted)]">
                               Cost {formatMoney(p.costPrice ?? 0)}
@@ -1120,6 +1178,9 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
               <input id="f-barcode" className={inputClass} value={form.barcode} onChange={(e) => set('barcode')(e.target.value)} placeholder="e.g. 9780310422353" inputMode="numeric" />
             </Field>
           </div>
+          <Field label="Reference (optional)" htmlFor="f-ref" hint="Internal reference — e.g. a publisher or supplier code.">
+            <input id="f-ref" className={inputClass} value={form.reference} onChange={(e) => set('reference')(e.target.value)} placeholder="e.g. NEL/KJV/REF-01" maxLength={40} />
+          </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Type" htmlFor="f-type">
               <select id="f-type" className={inputClass} value={form.productType} onChange={(e) => set('productType')(e.target.value)}>
@@ -1146,15 +1207,26 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
             </select>
           </Field>
 
-          <p className="chapter-eyebrow mt-2">Pricing</p>
+          <p className="chapter-eyebrow mt-2">Price list</p>
           <div className="grid grid-cols-2 gap-4">
             {canViewCost ? (
               <Field label="Cost price" htmlFor="f-cost">
                 <input id="f-cost" className={inputClass} inputMode="decimal" value={form.costPrice} onChange={(e) => set('costPrice')(e.target.value)} placeholder="0.00" />
               </Field>
             ) : null}
-            <Field label="Selling price" htmlFor="f-price">
+            <Field label="Standard price" htmlFor="f-price" hint="Used whenever a tier price is left blank.">
               <input id="f-price" className={inputClass} inputMode="decimal" value={form.sellingPrice} onChange={(e) => set('sellingPrice')(e.target.value)} placeholder="0.00" />
+            </Field>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Bishop price" htmlFor="f-p-bishop" hint="Blank = standard price.">
+              <input id="f-p-bishop" className={inputClass} inputMode="decimal" value={form.priceBishop} onChange={(e) => set('priceBishop')(e.target.value)} placeholder="0.00" />
+            </Field>
+            <Field label="Sons of the Prophet price" htmlFor="f-p-sop" hint="Blank = standard price.">
+              <input id="f-p-sop" className={inputClass} inputMode="decimal" value={form.priceSonsOfProphet} onChange={(e) => set('priceSonsOfProphet')(e.target.value)} placeholder="0.00" />
+            </Field>
+            <Field label="Pastor Deji price" htmlFor="f-p-deji" hint="Blank = standard price.">
+              <input id="f-p-deji" className={inputClass} inputMode="decimal" value={form.pricePastorDeji} onChange={(e) => set('pricePastorDeji')(e.target.value)} placeholder="0.00" />
             </Field>
           </div>
           {formMargin != null && (
