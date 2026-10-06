@@ -541,8 +541,15 @@ export function SpineCard({
   children: ReactNode;
   className?: string;
 }) {
+  /* Default padding — dropped when the caller supplies its own padding, so
+     both utilities don't fight: Tailwind v4 orders p-5 after p-0/p-4 in the
+     stylesheet, which would make the default win over the caller's override. */
+  const hasOwnPadding = /(?:^|\s)(?:p|px|py|pt|pr|pb|pl)-/.test(className);
   return (
-    <motion.div variants={riseVariants} className={`spine-card spine-${tone} p-5 ${className}`}>
+    <motion.div
+      variants={riseVariants}
+      className={`spine-card spine-${tone}${hasOwnPadding ? '' : ' p-5'} ${className}`}
+    >
       {children}
     </motion.div>
   );
@@ -592,7 +599,7 @@ export function KpiCard({
           </span>
         )}
       </div>
-      <p className="tnum font-display mt-3 text-[26px] leading-none text-[var(--ink)] sm:text-[30px]">
+      <p className="tnum font-display mt-3 text-[26px] leading-none break-words text-[var(--ink)] sm:text-[30px]">
         {value}
       </p>
       <p className="mt-1.5 text-[13px] font-semibold text-[var(--ink-muted)]">{label}</p>

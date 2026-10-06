@@ -351,20 +351,20 @@ function AdminProfitStrip({ data }: { data: DashboardData }) {
         <StampBadge tone="brass">Admin only</StampBadge>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-3">
-        <div>
-          <p className="tnum font-display text-xl text-[var(--ink)] sm:text-2xl">
+        <div className="min-w-0">
+          <p className="tnum font-display text-xl break-words text-[var(--ink)] sm:text-2xl">
             <CountUp value={profit} format={formatMoney} />
           </p>
           <p className="mt-1 text-xs font-semibold text-[var(--ink-muted)]">Gross profit today</p>
         </div>
-        <div>
-          <p className="tnum font-display text-xl text-[var(--ink)] sm:text-2xl">
+        <div className="min-w-0">
+          <p className="tnum font-display text-xl break-words text-[var(--ink)] sm:text-2xl">
             <CountUp value={cogs} format={formatMoney} />
           </p>
           <p className="mt-1 text-xs font-semibold text-[var(--ink-muted)]">Cost of goods</p>
         </div>
-        <div>
-          <p className="tnum font-display text-xl text-[var(--brass)] sm:text-2xl">
+        <div className="min-w-0">
+          <p className="tnum font-display text-xl break-words text-[var(--brass)] sm:text-2xl">
             <CountUp value={margin} format={(n) => `${n.toFixed(1)}%`} />
           </p>
           <p className="mt-1 text-xs font-semibold text-[var(--ink-muted)]">Profit margin</p>
@@ -401,13 +401,13 @@ function DepositsWidget() {
             href="/deposits"
             className="flex min-h-[64px] items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 transition hover:border-[var(--brass)]/50 hover:shadow-[var(--shadow)]"
           >
-            <span className="flex items-center gap-3">
+            <span className="flex min-w-0 items-center gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#F3EAD3] text-[var(--brass)]">
                 <Icon name="account_balance" size={22} />
               </span>
-              <span className="text-[15px] font-bold text-[var(--ink)]">{a.name}</span>
+              <span className="truncate text-[15px] font-bold text-[var(--ink)]">{a.name}</span>
             </span>
-            <span className="tnum font-bold text-[var(--brass)]">{formatMoney(a.totalDeposited)}</span>
+            <span className="tnum shrink-0 font-bold text-[var(--brass)]">{formatMoney(a.totalDeposited)}</span>
           </Link>
         ))}
       </div>
