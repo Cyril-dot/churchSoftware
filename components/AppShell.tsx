@@ -315,6 +315,7 @@ export default function AppShell({
   const nav = useMemo(() => navForRole(user.role), [user.role]);
   const [collapsed, setCollapsed] = useState(false);
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  const handleDragged = useRef(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -486,13 +487,13 @@ export default function AppShell({
         Skip to content
       </a>
 
-      {/* ── Desktop sidebar (≥1024px), collapsible + retractable ── */}
+      {/* ── Desktop sidebar (≥1024px), collapsible + retractable via edge handle ── */}
+      <div data-till-hide className="relative hidden shrink-0 lg:block">
       <motion.aside
-        data-till-hide
         initial={false}
         animate={{ width: sidebarHidden ? 0 : collapsed ? 80 : 264 }}
-        transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
-        className="relative sticky top-0 z-40 hidden h-screen shrink-0 flex-col overflow-hidden bg-[var(--side-bg)] lg:flex"
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        className="sticky top-0 z-40 flex h-screen flex-col overflow-hidden bg-[var(--side-bg)]"
         aria-label="Sidebar"
         aria-hidden={sidebarHidden}
       >
@@ -507,7 +508,7 @@ export default function AppShell({
             <Icon name="menu_book" size={24} />
           </span>
           {!collapsed && (
-            <span className="min-w-0 flex-1">
+            <span className="min-w-0">
               <span className="font-display block truncate text-[18px] leading-tight text-[var(--side-text)]">
                 Church Bookshop
               </span>
@@ -515,20 +516,6 @@ export default function AppShell({
                 Point of sale
               </span>
             </span>
-          )}
-          {/* Retract — tucks the whole sidebar away */}
-          {!collapsed && (
-            <motion.button
-              type="button"
-              onClick={() => setSidebarHidden(true)}
-              aria-label="Hide sidebar"
-              title="Hide sidebar  ( [ )"
-              whileHover={{ scale: 1.08 }}
-              whileTap={{ scale: 0.9 }}
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[var(--side-muted)] transition-colors hover:bg-white/[0.07] hover:text-[var(--side-text)]"
-            >
-              <Icon name="menu_open" size={20} />
-            </motion.button>
           )}
         </div>
 
@@ -583,31 +570,36 @@ export default function AppShell({
         </div>
       </motion.aside>
 
-      {/* ── Sidebar restore handle (when retracted) ── */}
-      {sidebarHidden && (
-        <motion.button
-          type="button"
-          data-till-hide
-          onClick={() => setSidebarHidden(false)}
-          aria-label="Show sidebar"
-          initial={{ x: -48, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 320, damping: 26, delay: 0.15 }}
-          whileHover={{ width: 52 }}
-          whileTap={{ scale: 0.94 }}
-          className="group fixed top-1/2 left-0 z-50 hidden h-28 w-9 -translate-y-1/2 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-r-2xl border border-l-0 border-[#D9B15A]/25 bg-gradient-to-b from-[#3A2A1E] via-[#2B2015] to-[#241A12] shadow-[6px_0_28px_rgba(0,0,0,0.4)] lg:flex"
-        >
-          <span className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-[radial-gradient(100%_100%_at_50%_0%,rgba(217,177,90,0.22),transparent_70%)]" aria-hidden="true" />
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--gold)] text-[#241A12] shadow-[0_2px_10px_rgba(217,177,90,0.45)]">
-            <Icon name="menu_book" size={20} />
-          </span>
-          <Icon name="chevron_right" size={18} className="text-[var(--side-muted)] transition-transform duration-200 group-hover:translate-x-1 group-hover:text-[var(--gold)]" />
-          <span className="pointer-events-none absolute top-1/2 left-full ml-3 -translate-y-1/2 rounded-lg bg-[#241A12] px-3 py-1.5 text-xs font-bold whitespace-nowrap text-white opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100">
-            Show sidebar&nbsp;
-            <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono">[</kbd>
-          </span>
-        </motion.button>
-      )}
+      {/* ── Edge handle: grab to retract / pull to restore ── */}
+      <motion.button
+        type="button"
+        aria-label={sidebarHidden ? 'Show sidebar' : 'Hide sidebar'}
+        title={sidebarHidden ? 'Show sidebar  ( [ )' : 'Hide sidebar  ( [ )'}
+        initial={false}
+        animate={{ x: (sidebarHidden ? 0 : collapsed ? 80 : 264) - 14, y: '-50%' }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        drag="x"
+        dragConstraints={{ left: -70, right: 70 }}
+        dragElastic={0.12}
+        dragMomentum={false}
+        onDragStart={() => { handleDragged.current = false; }}
+        onDrag={(_, info) => { if (Math.abs(info.offset.x) > 10) handleDragged.current = true; }}
+        onDragEnd={(_, info) => {
+          if (!sidebarHidden && (info.offset.x < -45 || info.velocity.x < -350)) setSidebarHidden(true);
+          else if (sidebarHidden && (info.offset.x > 45 || info.velocity.x > 350)) setSidebarHidden(false);
+        }}
+        onClick={() => { if (!handleDragged.current) setSidebarHidden((v) => !v); }}
+        whileHover={{ scale: 1.12 }}
+        whileTap={{ scale: 0.92, cursor: 'grabbing' }}
+        className="absolute top-1/2 left-0 z-50 block h-28 w-7 cursor-grab touch-none"
+      >
+        <span className="flex h-full w-full flex-col items-center justify-center gap-[5px] rounded-full border border-[#D9B15A]/35 bg-gradient-to-b from-[#4A3626] via-[#33261A] to-[#201812] shadow-[0_6px_20px_rgba(0,0,0,0.5)] transition-shadow hover:shadow-[0_6px_24px_rgba(217,177,90,0.4)]">
+          <span className="h-[3px] w-3.5 rounded-full bg-[#D9B15A]/80" />
+          <span className="h-[3px] w-3.5 rounded-full bg-[#D9B15A]/80" />
+          <span className="h-[3px] w-3.5 rounded-full bg-[#D9B15A]/80" />
+        </span>
+      </motion.button>
+      </div>
 
       {/* ── Tablet icon rail (640–1023px) ── */}
       <aside
