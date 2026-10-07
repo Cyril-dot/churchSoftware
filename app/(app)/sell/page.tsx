@@ -236,9 +236,9 @@ async function apiGetProducts(search: string, signal: AbortSignal): Promise<ApiP
 /* ═══════════════════════ Small components ═══════════════════════ */
 
 function Stepper({ value, onChange, max }: { value: number; onChange: (v: number) => void; max: number }) {
-  const btn = 'w-9 h-9 rounded-full grid place-items-center transition active:scale-90 disabled:opacity-25';
+  const btn = 'w-7 h-7 rounded-full grid place-items-center transition active:scale-90 disabled:opacity-25';
   return (
-    <div className="flex items-center gap-0.5 rounded-full bg-ink/[0.05] border border-border p-1">
+    <div className="flex items-center gap-0.5 rounded-full bg-ink/[0.05] border border-border p-0.5">
       <button
         type="button"
         aria-label="Decrease quantity"
@@ -246,9 +246,9 @@ function Stepper({ value, onChange, max }: { value: number; onChange: (v: number
         disabled={value <= 1}
         className={`${btn} text-ink hover:bg-white`}
       >
-        <Icon name="remove" size={18} />
+        <Icon name="remove" size={15} />
       </button>
-      <span className="tnum min-w-7 text-center text-[17px] font-black" aria-live="polite">{value}</span>
+      <span className="tnum min-w-6 text-center text-[14px] font-black" aria-live="polite">{value}</span>
       <button
         type="button"
         aria-label="Increase quantity"
@@ -256,7 +256,7 @@ function Stepper({ value, onChange, max }: { value: number; onChange: (v: number
         disabled={value >= max}
         className={`${btn} bg-wine text-white shadow-sm hover:bg-wine-hover`}
       >
-        <Icon name="add" size={18} />
+        <Icon name="add" size={15} />
       </button>
     </div>
   );
@@ -1133,27 +1133,27 @@ export default function SellPage() {
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -24, height: 0, marginTop: 0, marginBottom: 0 }}
                           transition={{ duration: 0.2 }}
-                          className="group flex items-start gap-2.5 overflow-hidden border-b border-dashed border-border-input/70 py-3.5 last:border-b-0"
+                          className="group flex items-start gap-2 overflow-hidden border-b border-dashed border-border-input/70 py-2.5 last:border-b-0"
                         >
                           <div className="min-w-0 flex-1 pt-0.5">
-                            <p className="text-[15px] font-bold leading-snug text-ink line-clamp-2">{l.name}</p>
-                            <p className="tnum mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
+                            <p className="text-[13.5px] font-bold leading-snug text-ink line-clamp-2">{l.name}</p>
+                            <p className="tnum mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] text-ink-muted">
                               <span>{formatMoney(l.unitPrice)} <span className="opacity-70">×</span> {l.quantity}</span>
                               {l.priceTier !== 'standard' && (
                                 <StampBadge tone="gold">{TIER_STAMP[l.priceTier]}</StampBadge>
                               )}
                             </p>
                           </div>
-                          <div className="flex shrink-0 flex-col items-end gap-1.5">
-                            <p className="tnum text-[16px] font-black text-ink">{formatMoney(l.unitPrice * l.quantity)}</p>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <p className="tnum text-[14px] font-black text-ink">{formatMoney(l.unitPrice * l.quantity)}</p>
                             <Stepper value={l.quantity} max={l.stock} onChange={(v) => setQty(lineKey(l.productId, l.priceTier), v)} />
                           </div>
                           <button
                             onClick={() => removeLine(lineKey(l.productId, l.priceTier))}
                             aria-label={`Remove ${l.name}`}
-                            className="grid h-9 w-9 shrink-0 place-items-center self-center rounded-full text-ink-muted/70 transition hover:bg-danger-bg hover:text-danger active:scale-90"
+                            className="grid h-8 w-8 shrink-0 place-items-center self-center rounded-full text-ink-muted/70 transition hover:bg-danger-bg hover:text-danger active:scale-90"
                           >
-                            <Icon name="close" size={18} />
+                            <Icon name="close" size={16} />
                           </button>
                         </motion.li>
                       ))}
