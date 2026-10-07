@@ -428,6 +428,20 @@ export default function AppShell({
     return () => window.removeEventListener('keydown', onKey);
   }, [moreOpen]);
 
+  /* `[` toggles the sidebar — retract / restore without touching the mouse. */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (e.key === '[' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setSidebarHidden((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const collapseButton = (iconOnly: boolean) => (
     <button
       type="button"
@@ -443,23 +457,6 @@ export default function AppShell({
     >
       <Icon name={collapsed ? 'chevron_right' : 'chevron_left'} size={22} />
       {!iconOnly && !collapsed && <span className="text-sm font-medium">Collapse</span>}
-    </button>
-  );
-
-  const hideButton = (iconOnly: boolean) => (
-    <button
-      type="button"
-      onClick={() => setSidebarHidden(true)}
-      aria-label="Hide sidebar"
-      title="Hide sidebar"
-      className={
-        iconOnly
-          ? 'flex h-11 w-11 items-center justify-center rounded-lg text-[var(--side-muted)] hover:bg-white/[0.06] hover:text-[var(--side-text)]'
-          : 'flex h-11 min-w-[44px] flex-1 items-center justify-center gap-2 rounded-lg text-[var(--side-muted)] hover:bg-white/[0.06] hover:text-[var(--side-text)]'
-      }
-    >
-      <Icon name="menu_open" size={22} />
-      {!iconOnly && <span className="text-sm font-medium">Hide</span>}
     </button>
   );
 
@@ -510,7 +507,7 @@ export default function AppShell({
             <Icon name="menu_book" size={24} />
           </span>
           {!collapsed && (
-            <span className="min-w-0">
+            <span className="min-w-0 flex-1">
               <span className="font-display block truncate text-[18px] leading-tight text-[var(--side-text)]">
                 Church Bookshop
               </span>
@@ -518,6 +515,20 @@ export default function AppShell({
                 Point of sale
               </span>
             </span>
+          )}
+          {/* Retract — tucks the whole sidebar away */}
+          {!collapsed && (
+            <motion.button
+              type="button"
+              onClick={() => setSidebarHidden(true)}
+              aria-label="Hide sidebar"
+              title="Hide sidebar  ( [ )"
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.9 }}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[var(--side-muted)] transition-colors hover:bg-white/[0.07] hover:text-[var(--side-text)]"
+            >
+              <Icon name="menu_open" size={20} />
+            </motion.button>
           )}
         </div>
 
@@ -553,7 +564,6 @@ export default function AppShell({
           {collapsed ? (
             <div className="flex flex-col items-center gap-1">
               {collapseButton(true)}
-              {hideButton(true)}
               {settingsItem && shortcutLink(settingsItem)}
               {guideItem && shortcutLink(guideItem)}
               <div className="flex w-full justify-center" title={user.name}>
@@ -565,7 +575,6 @@ export default function AppShell({
               <UserMenu user={user} onChangePassword={() => setPwOpen(true)} onSignOut={signOut} variant="sidebar" />
               <div className="flex items-center gap-1">
                 {collapseButton(false)}
-                {hideButton(false)}
                 {settingsItem && shortcutLink(settingsItem)}
                 {guideItem && shortcutLink(guideItem)}
               </div>
@@ -574,18 +583,30 @@ export default function AppShell({
         </div>
       </motion.aside>
 
-      {/* ── Sidebar restore tab (when retracted) ── */}
+      {/* ── Sidebar restore handle (when retracted) ── */}
       {sidebarHidden && (
-        <button
+        <motion.button
           type="button"
           data-till-hide
           onClick={() => setSidebarHidden(false)}
           aria-label="Show sidebar"
-          title="Show sidebar"
-          className="fixed top-1/2 left-0 z-50 hidden h-20 w-7 -translate-y-1/2 place-items-center rounded-r-2xl border border-l-0 border-white/10 bg-[var(--side-bg)] text-[var(--side-muted)] shadow-[4px_0_16px_rgba(0,0,0,0.25)] transition-all hover:w-9 hover:text-[var(--side-text)] lg:grid"
+          initial={{ x: -48, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 26, delay: 0.15 }}
+          whileHover={{ width: 52 }}
+          whileTap={{ scale: 0.94 }}
+          className="group fixed top-1/2 left-0 z-50 hidden h-28 w-9 -translate-y-1/2 flex-col items-center justify-center gap-1.5 overflow-hidden rounded-r-2xl border border-l-0 border-[#D9B15A]/25 bg-gradient-to-b from-[#3A2A1E] via-[#2B2015] to-[#241A12] shadow-[6px_0_28px_rgba(0,0,0,0.4)] lg:flex"
         >
-          <Icon name="chevron_right" size={20} />
-        </button>
+          <span className="pointer-events-none absolute inset-x-0 top-0 h-10 bg-[radial-gradient(100%_100%_at_50%_0%,rgba(217,177,90,0.22),transparent_70%)]" aria-hidden="true" />
+          <span className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--gold)] text-[#241A12] shadow-[0_2px_10px_rgba(217,177,90,0.45)]">
+            <Icon name="menu_book" size={20} />
+          </span>
+          <Icon name="chevron_right" size={18} className="text-[var(--side-muted)] transition-transform duration-200 group-hover:translate-x-1 group-hover:text-[var(--gold)]" />
+          <span className="pointer-events-none absolute top-1/2 left-full ml-3 -translate-y-1/2 rounded-lg bg-[#241A12] px-3 py-1.5 text-xs font-bold whitespace-nowrap text-white opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100">
+            Show sidebar&nbsp;
+            <kbd className="rounded border border-white/20 bg-white/10 px-1.5 py-0.5 font-mono">[</kbd>
+          </span>
+        </motion.button>
       )}
 
       {/* ── Tablet icon rail (640–1023px) ── */}
