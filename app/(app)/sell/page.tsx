@@ -853,89 +853,6 @@ export default function SellPage() {
             </button>
           </div>
 
-          {/* Search */}
-          <div className="relative">
-            <Icon name="search" size={22} className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
-            <input
-              ref={searchRef}
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search books, Bibles, stationery…"
-              aria-label="Search products"
-              autoComplete="off"
-              className="w-full h-14 rounded-xl bg-surface border-2 border-border-input pl-12 pr-24 text-lg placeholder:text-ink-muted/70 focus:border-wine focus:outline-none transition"
-            />
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-              {searching && <Icon name="progress_activity" size={20} className="text-wine animate-spin" />}
-              <kbd className="hidden sm:inline-flex items-center gap-1 rounded-md bg-surface-alt border border-border px-2 py-1 text-xs font-semibold text-ink-muted">
-                ⌘K
-              </kbd>
-            </div>
-          </div>
-
-          {/* Category tiles — collapsible */}
-          <div className="mt-3 flex items-center justify-between gap-2">
-            <span className="chapter-eyebrow shrink-0">Categories</span>
-            <button
-              type="button"
-              onClick={() => setShowCategories((v) => !v)}
-              aria-pressed={showCategories}
-              aria-expanded={showCategories}
-              className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-bold text-ink-muted hover:bg-surface-alt hover:text-ink transition"
-            >
-              <Icon name={showCategories ? 'expand_less' : 'expand_more'} size={18} />
-              {showCategories ? 'Hide' : 'Show'}
-            </button>
-          </div>
-          {showCategories && (
-          <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-5" role="group" aria-label="Filter by category">
-            {CATEGORY_TILES.map((t) => {
-              const active = selectedType === t.value;
-              return (
-                <button
-                  key={t.value}
-                  type="button"
-                  onClick={() => setSelectedType(active ? null : t.value)}
-                  aria-pressed={active}
-                  className={`flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center font-bold transition active:scale-95 ${t.bg} hover:brightness-95 ${
-                    active
-                      ? 'ring-[3px] ring-wine ring-offset-2 ring-offset-parchment shadow-md brightness-[0.93]'
-                      : ''
-                  }`}
-                >
-                  <Icon name={t.icon} size={22} />
-                  <span className="text-[11px] leading-tight sm:text-xs">{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
-          )}
-
-          {/* Price list selector — tier applies to items added from now on */}
-          <div className="mt-3 flex items-center gap-2 flex-wrap" role="radiogroup" aria-label="Price list">
-            <span className="chapter-eyebrow mr-1 shrink-0">Price list</span>
-            {PRICE_TIERS.map((t) => {
-              const active = priceTier === t.value;
-              return (
-                <button
-                  key={t.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setPriceTier(t.value)}
-                  className={`min-h-[44px] px-4 rounded-full text-sm font-bold border-2 transition active:scale-95 ${
-                    active
-                      ? 'bg-wine border-wine text-white shadow-md'
-                      : 'bg-surface border-border text-ink hover:border-wine/60'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-
           {/*Mobile tabs */}          <div className="lg:hidden mt-3 grid grid-cols-2 gap-2 p-1 rounded-xl bg-surface-alt border border-border" role="tablist" aria-label="POS views">            {(['browse', 'cart'] as const).map((tab) => (
               <button
                 key={tab}
@@ -986,6 +903,90 @@ export default function SellPage() {
 
           {/* ── Product grid ── */}
           <section aria-label="Products" className={`${mobileTab === 'cart' ? 'hidden lg:block' : ''} ${tillMode ? 'h-full min-h-0 overflow-y-auto px-4 py-4 lg:px-6' : ''}`}>
+          {/* Search */}
+          <div className="relative">
+            <Icon name="search" size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search books, Bibles, stationery…"
+              aria-label="Search products"
+              autoComplete="off"
+              className="w-full h-12 rounded-xl bg-surface border-2 border-border-input pl-11 pr-20 text-base placeholder:text-ink-muted/70 focus:border-wine focus:outline-none transition"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {searching && <Icon name="progress_activity" size={20} className="text-wine animate-spin" />}
+              <kbd className="hidden sm:inline-flex items-center gap-1 rounded-md bg-surface-alt border border-border px-2 py-1 text-xs font-semibold text-ink-muted">
+                ⌘K
+              </kbd>
+            </div>
+          </div>
+
+          {/* Category tiles — collapsible */}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <span className="chapter-eyebrow shrink-0">Categories</span>
+            <button
+              type="button"
+              onClick={() => setShowCategories((v) => !v)}
+              aria-pressed={showCategories}
+              aria-expanded={showCategories}
+              className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-bold text-ink-muted hover:bg-surface-alt hover:text-ink transition"
+            >
+              <Icon name={showCategories ? 'expand_less' : 'expand_more'} size={18} />
+              {showCategories ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showCategories && (
+          <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-5" role="group" aria-label="Filter by category">
+            {CATEGORY_TILES.map((t) => {
+              const active = selectedType === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setSelectedType(active ? null : t.value)}
+                  aria-pressed={active}
+                  className={`flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-center font-bold transition active:scale-95 ${t.bg} hover:brightness-95 ${
+                    active
+                      ? 'ring-[3px] ring-wine ring-offset-2 ring-offset-parchment shadow-md brightness-[0.93]'
+                      : ''
+                  }`}
+                >
+                  <Icon name={t.icon} size={22} />
+                  <span className="text-[11px] leading-tight sm:text-xs">{t.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          )}
+
+          {/* Price list selector — tier applies to items added from now on */}
+          <div className="mt-3 mb-5 flex items-center gap-2 flex-wrap" role="radiogroup" aria-label="Price list">
+            <span className="chapter-eyebrow mr-1 shrink-0">Price list</span>
+            {PRICE_TIERS.map((t) => {
+              const active = priceTier === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setPriceTier(t.value)}
+                  className={`min-h-[44px] px-4 rounded-full text-sm font-bold border-2 transition active:scale-95 ${
+                    active
+                      ? 'bg-wine border-wine text-white shadow-md'
+                      : 'bg-surface border-border text-ink hover:border-wine/60'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+
             {searchError ? (
               <div className="rounded-xl bg-danger-bg border border-danger/30 p-6 text-center">
                 <Icon name="cloud_off" size={36} className="text-danger mx-auto mb-2" />
