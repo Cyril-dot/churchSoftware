@@ -576,7 +576,7 @@ export default function AppShell({
         aria-label={sidebarHidden ? 'Show sidebar' : 'Hide sidebar'}
         title={sidebarHidden ? 'Show sidebar  ( [ )' : 'Hide sidebar  ( [ )'}
         initial={false}
-        animate={{ x: (sidebarHidden ? 0 : collapsed ? 80 : 264) - 18, y: '-50%' }}
+        animate={{ x: (sidebarHidden ? 0 : collapsed ? 80 : 264) - 13, y: '-50%' }}
         transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
         drag="x"
         dragConstraints={{ left: -70, right: 70 }}
@@ -589,24 +589,23 @@ export default function AppShell({
           else if (sidebarHidden && (info.offset.x > 45 || info.velocity.x > 350)) setSidebarHidden(false);
         }}
         onClick={() => { if (!handleDragged.current) setSidebarHidden((v) => !v); }}
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.92, cursor: 'grabbing' }}
-        className="absolute top-1/2 left-0 z-50 block h-40 w-9 cursor-grab touch-none"
+        whileHover={{ scale: 1.15 }}
+        whileTap={{ scale: 0.9, cursor: 'grabbing' }}
+        className="absolute top-1/2 left-0 z-50 block h-20 w-[26px] cursor-grab touch-none"
       >
-        <motion.span
-          className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-full border-2 border-[#D9B15A]/60 bg-gradient-to-b from-[#5A422C] via-[#3A2C1E] to-[#241A12] shadow-[0_8px_28px_rgba(0,0,0,0.55),0_0_18px_rgba(217,177,90,0.35)]"
-          animate={{ boxShadow: [
-            '0 8px 28px rgba(0,0,0,0.55), 0 0 18px rgba(217,177,90,0.35)',
-            '0 8px 28px rgba(0,0,0,0.55), 0 0 32px rgba(217,177,90,0.65)',
-            '0 8px 28px rgba(0,0,0,0.55), 0 0 18px rgba(217,177,90,0.35)',
-          ] }}
-          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
-        >
-          <span className="h-1 w-5 rounded-full bg-[#D9B15A]" />
-          <span className="h-1 w-5 rounded-full bg-[#D9B15A]" />
-          <span className="h-1 w-5 rounded-full bg-[#D9B15A]" />
-          <span className="h-1 w-5 rounded-full bg-[#D9B15A]" />
-        </motion.span>
+        <span className="relative flex h-full w-full flex-col items-center justify-center gap-1 rounded-full border border-[#D9B15A]/40 bg-gradient-to-b from-[#3D2D1E] via-[#2A1F14] to-[#1C1410] shadow-[0_4px_14px_rgba(0,0,0,0.5)]">
+          <span className="pointer-events-none absolute inset-[3px] rounded-full border border-white/[0.06]" aria-hidden="true" />
+          <Icon
+            name={sidebarHidden ? 'chevron_right' : 'chevron_left'}
+            size={15}
+            className="text-[#D9B15A]"
+          />
+          <span className="flex flex-col items-center gap-[3px]" aria-hidden="true">
+            <span className="h-[2px] w-2.5 rounded-full bg-[#D9B15A]/50" />
+            <span className="h-[2px] w-2.5 rounded-full bg-[#D9B15A]/50" />
+            <span className="h-[2px] w-2.5 rounded-full bg-[#D9B15A]/50" />
+          </span>
+        </span>
       </motion.button>
       </div>
 
