@@ -902,7 +902,7 @@ export default function SellPage() {
         }>
 
           {/* ── Product grid ── */}
-          <section aria-label="Products" className={`${mobileTab === 'cart' ? 'hidden lg:block' : ''} ${tillMode ? 'h-full min-h-0 overflow-y-auto px-4 py-4 lg:px-6' : ''}`}>
+          <section aria-label="Products" className={`${mobileTab === 'cart' ? 'hidden lg:block' : ''} ${tillMode ? 'h-full min-h-0 flex flex-col px-4 pt-4 pb-2 lg:px-6' : ''}`}>
           {/* Search */}
           <div className="relative">
             <Icon name="search" size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
@@ -986,7 +986,8 @@ export default function SellPage() {
             })}
           </div>
 
-
+          {/* Till-mode scroll region: filters stay fixed above */}
+          <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto pt-1 pb-4' : ''}>
             {searchError ? (
               <div className="rounded-xl bg-danger-bg border border-danger/30 p-6 text-center">
                 <Icon name="cloud_off" size={36} className="text-danger mx-auto mb-2" />
@@ -1057,6 +1058,7 @@ export default function SellPage() {
                 </AnimatePresence>
               </ul>
             )}
+          </div>
           </section>
 
           {/* ── Cart / selling dashboard ── */}

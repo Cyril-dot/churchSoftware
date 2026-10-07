@@ -314,6 +314,7 @@ export default function AppShell({
   const router = useRouter();
   const nav = useMemo(() => navForRole(user.role), [user.role]);
   const [collapsed, setCollapsed] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -445,6 +446,23 @@ export default function AppShell({
     </button>
   );
 
+  const hideButton = (iconOnly: boolean) => (
+    <button
+      type="button"
+      onClick={() => setSidebarHidden(true)}
+      aria-label="Hide sidebar"
+      title="Hide sidebar"
+      className={
+        iconOnly
+          ? 'flex h-11 w-11 items-center justify-center rounded-lg text-[var(--side-muted)] hover:bg-white/[0.06] hover:text-[var(--side-text)]'
+          : 'flex h-11 min-w-[44px] flex-1 items-center justify-center gap-2 rounded-lg text-[var(--side-muted)] hover:bg-white/[0.06] hover:text-[var(--side-text)]'
+      }
+    >
+      <Icon name="menu_open" size={22} />
+      {!iconOnly && <span className="text-sm font-medium">Hide</span>}
+    </button>
+  );
+
   const shortcutLink = (item: NavItem) => (
     <Link
       key={item.href}
@@ -471,14 +489,15 @@ export default function AppShell({
         Skip to content
       </a>
 
-      {/* ── Desktop sidebar (≥1024px), collapsible ── */}
+      {/* ── Desktop sidebar (≥1024px), collapsible + retractable ── */}
       <motion.aside
         data-till-hide
         initial={false}
-        animate={{ width: collapsed ? 80 : 264 }}
+        animate={{ width: sidebarHidden ? 0 : collapsed ? 80 : 264 }}
         transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
         className="relative sticky top-0 z-40 hidden h-screen shrink-0 flex-col overflow-hidden bg-[var(--side-bg)] lg:flex"
         aria-label="Sidebar"
+        aria-hidden={sidebarHidden}
       >
         {/* warm top glow over the deep coffee base */}
         <div
@@ -534,6 +553,7 @@ export default function AppShell({
           {collapsed ? (
             <div className="flex flex-col items-center gap-1">
               {collapseButton(true)}
+              {hideButton(true)}
               {settingsItem && shortcutLink(settingsItem)}
               {guideItem && shortcutLink(guideItem)}
               <div className="flex w-full justify-center" title={user.name}>
@@ -545,6 +565,7 @@ export default function AppShell({
               <UserMenu user={user} onChangePassword={() => setPwOpen(true)} onSignOut={signOut} variant="sidebar" />
               <div className="flex items-center gap-1">
                 {collapseButton(false)}
+                {hideButton(false)}
                 {settingsItem && shortcutLink(settingsItem)}
                 {guideItem && shortcutLink(guideItem)}
               </div>
@@ -552,6 +573,20 @@ export default function AppShell({
           )}
         </div>
       </motion.aside>
+
+      {/* ── Sidebar restore tab (when retracted) ── */}
+      {sidebarHidden && (
+        <button
+          type="button"
+          data-till-hide
+          onClick={() => setSidebarHidden(false)}
+          aria-label="Show sidebar"
+          title="Show sidebar"
+          className="fixed top-1/2 left-0 z-50 hidden h-20 w-7 -translate-y-1/2 place-items-center rounded-r-2xl border border-l-0 border-white/10 bg-[var(--side-bg)] text-[var(--side-muted)] shadow-[4px_0_16px_rgba(0,0,0,0.25)] transition-all hover:w-9 hover:text-[var(--side-text)] lg:grid"
+        >
+          <Icon name="chevron_right" size={20} />
+        </button>
+      )}
 
       {/* ── Tablet icon rail (640–1023px) ── */}
       <aside
