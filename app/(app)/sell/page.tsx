@@ -1061,15 +1061,15 @@ export default function SellPage() {
           {/* ── Cart / selling dashboard ── */}
           <aside
             aria-label="Cart and checkout"
-            className={`${mobileTab === 'browse' ? 'hidden lg:block' : ''} ${tillMode ? 'h-full min-h-0 border-t lg:border-t-0 lg:border-l border-border bg-surface' : 'lg:sticky lg:top-[190px]'}`}
+            className={`${mobileTab === 'browse' ? 'hidden lg:block' : ''} ${tillMode ? 'h-full min-h-0 border-t lg:border-t-0 lg:border-l border-border bg-surface' : 'lg:sticky lg:top-20 lg:h-[calc(100vh-6.5rem)]'}`}
           >
             <div className={tillMode
               ? 'h-full flex flex-col overflow-hidden'
-              : 'rounded-xl bg-surface border border-border shadow-sm overflow-hidden paper-texture'
+              : 'h-full flex flex-col rounded-2xl bg-surface border border-border shadow-[0_12px_40px_rgba(60,30,20,0.10)] overflow-hidden paper-texture'
             }>
               {/* Cart lines */}
-              <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto p-4 pb-6 lg:p-5 lg:pb-8' : 'p-4 border-b border-border'}>
-                <div className="flex items-center justify-between mb-1">
+              <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto p-4 pb-6 lg:p-5 lg:pb-8' : 'flex-1 min-h-0 flex flex-col p-4 lg:p-5 pb-2'}>
+                <div className="flex items-center justify-between mb-1 shrink-0">
                   <h2 className="flex items-center gap-2.5">
                     {cart.length > 0 ? (
                       <span className="relative flex h-2.5 w-2.5" aria-hidden="true">
@@ -1122,7 +1122,7 @@ export default function SellPage() {
                     </p>
                   </div>
                 ) : (
-                  <ul className={tillMode ? '-mx-4 px-4' : 'max-h-72 overflow-y-auto -mx-4 px-4'}>
+                  <ul className={tillMode ? '-mx-4 px-4' : 'flex-1 min-h-0 overflow-y-auto -mx-4 px-4'}>
                     <AnimatePresence initial={false}>
                       {cart.map((l) => (
                         <motion.li
@@ -1161,8 +1161,8 @@ export default function SellPage() {
                 )}
               </div>
 
-              {/* ── Checkout footer: pinned to bottom in till mode ── */}
-              <div className={tillMode ? 'shrink-0 border-t-2 border-border bg-surface max-h-[62%] overflow-y-auto' : 'contents'}>
+              {/* ── Checkout footer: pinned to bottom ── */}
+              <div className={tillMode ? 'shrink-0 border-t-2 border-border bg-surface max-h-[62%] overflow-y-auto' : 'shrink-0 border-t border-border bg-surface max-h-[72%] overflow-y-auto rounded-b-2xl'}>
               {/* Discount */}
               {cart.length > 0 && (
                 <div className="p-4 border-b border-border">
