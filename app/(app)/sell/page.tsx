@@ -1071,7 +1071,7 @@ export default function SellPage() {
               : 'h-full flex flex-col rounded-2xl bg-surface border border-border shadow-[0_12px_40px_rgba(60,30,20,0.10)] overflow-hidden paper-texture'
             }>
               {/* Cart lines */}
-              <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto p-4 pb-6 lg:p-5 lg:pb-8' : 'flex-1 min-h-0 flex flex-col p-4 lg:p-5 pb-2'}>
+              <div className={tillMode ? 'flex-1 min-h-0 overflow-y-auto px-4 py-2 lg:px-5' : 'flex-1 min-h-0 flex flex-col p-4 lg:p-5 pb-2'}>
                 <div className="flex items-center justify-between mb-1 shrink-0">
                   <h2 className="flex items-center gap-2.5">
                     {cart.length > 0 ? (
@@ -1125,7 +1125,7 @@ export default function SellPage() {
                     </p>
                   </div>
                 ) : (
-                  <ul className={tillMode ? '-mx-4 px-4' : 'flex-1 min-h-0 overflow-y-auto -mx-4 px-4'}>
+                  <ul className={tillMode ? '-mx-4 px-4 lg:-mx-5 lg:px-5' : 'flex-1 min-h-0 overflow-y-auto -mx-4 px-4'}>
                     <AnimatePresence initial={false}>
                       {cart.map((l) => (
                         <motion.li
@@ -1135,11 +1135,11 @@ export default function SellPage() {
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -24, height: 0, marginTop: 0, marginBottom: 0 }}
                           transition={{ duration: 0.2 }}
-                          className="group flex items-start gap-2 overflow-hidden border-b border-dashed border-border-input/70 py-2.5 last:border-b-0"
+                          className={`group flex items-start gap-2 overflow-hidden border-b border-dashed border-border-input/70 last:border-b-0 ${tillMode ? 'py-2' : 'py-2.5'}`}
                         >
                           <div className="min-w-0 flex-1 pt-0.5">
-                            <p className="text-[13.5px] font-bold leading-snug text-ink line-clamp-2">{l.name}</p>
-                            <p className="tnum mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px] text-ink-muted">
+                            <p className={`font-bold leading-snug text-ink line-clamp-2 ${tillMode ? 'text-[13px]' : 'text-[13.5px]'}`}>{l.name}</p>
+                            <p className={`tnum mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ink-muted ${tillMode ? 'text-[11.5px]' : 'text-[12px]'}`}>
                               <span>{formatMoney(l.unitPrice)} <span className="opacity-70">×</span> {l.quantity}</span>
                               {l.priceTier !== 'standard' && (
                                 <StampBadge tone="gold">{TIER_STAMP[l.priceTier]}</StampBadge>
@@ -1147,7 +1147,7 @@ export default function SellPage() {
                             </p>
                           </div>
                           <div className="flex shrink-0 flex-col items-end gap-1">
-                            <p className="tnum text-[14px] font-black text-ink">{formatMoney(l.unitPrice * l.quantity)}</p>
+                            <p className={`tnum font-black text-ink ${tillMode ? 'text-[13px]' : 'text-[14px]'}`}>{formatMoney(l.unitPrice * l.quantity)}</p>
                             <Stepper value={l.quantity} max={l.stock} onChange={(v) => setQty(lineKey(l.productId, l.priceTier), v)} />
                           </div>
                           <button
