@@ -5,6 +5,7 @@ import { motion } from 'motion/react';
 import { toast } from 'sonner';
 import type { SessionUser } from '@/lib/auth';
 import Icon from '@/components/Icon';
+import ReceiptLogo from '@/components/ReceiptLogo';
 import { formatMoney } from '@/lib/money';
 import { servedByLine } from '@/lib/cashier';
 import {
@@ -529,10 +530,12 @@ export default function SalesClient({ user }: { user: SessionUser }) {
           <SkeletonRows rows={5} />
         ) : detail ? (
           <div>
-            {/* Receipt paper */}
-            <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-alt)] p-5">
+            {/* Receipt paper — true receipt width, like the printed slip */}
+            <div className="rounded-xl border border-[var(--border)] bg-[#FFFDF7] p-5 shadow-inner">
+              <div className="mx-auto w-full max-w-[300px]">
               <div className="text-center">
-                <p className="font-display text-xl text-[var(--ink)]">{detail.sale.receiptNumber}</p>
+                <ReceiptLogo />
+                <p className="font-display mt-2 text-xl text-[var(--ink)]">{detail.sale.receiptNumber}</p>
                 <p className="mt-1 text-sm text-[var(--ink-muted)]">
                   {fmtDateTime(detail.sale.soldAt)}
                 </p>
@@ -612,6 +615,7 @@ export default function SalesClient({ user }: { user: SessionUser }) {
                   </p>
                 </div>
               )}
+              </div>{/* /receipt-width wrapper */}
             </div>
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <SecondaryButton onClick={() => window.print()}>
@@ -673,10 +677,10 @@ function SalesReceiptPrint({ receipt }: { receipt: Receipt }) {
   const { sale, items } = receipt;
   const soldAt = new Date(sale.soldAt);
   return (
-    <div className="text-black text-sm">
+    <div className="mx-auto w-full max-w-[300px] text-black text-sm">
       <div className="text-center mb-3">
-        <p className="font-bold text-lg">Church Bookshop</p>
-        <p className="font-bold">{sale.receiptNumber}</p>
+        <ReceiptLogo />
+        <p className="mt-2 font-bold">{sale.receiptNumber}</p>
         <p className="text-xs opacity-70">
           {soldAt.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}{' '}
           {soldAt.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' })}

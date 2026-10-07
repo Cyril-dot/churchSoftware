@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion, animate } from 'motion/react';
 import { Toaster, toast } from 'sonner';
 import Icon from '@/components/Icon';
+import ReceiptLogo from '@/components/ReceiptLogo';
 import { StampBadge } from '@/components/ui';
 import { formatMoney, parseMoney } from '@/lib/money';
 import { servedByLine } from '@/lib/cashier';
@@ -1130,10 +1131,10 @@ export default function SellPage() {
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -24, height: 0, marginTop: 0, marginBottom: 0 }}
                           transition={{ duration: 0.2 }}
-                          className="group flex items-center gap-2.5 overflow-hidden border-b border-dashed border-border-input/70 py-3.5 last:border-b-0"
+                          className="group flex items-start gap-2.5 overflow-hidden border-b border-dashed border-border-input/70 py-3.5 last:border-b-0"
                         >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-[15px] font-bold leading-snug text-ink">{l.name}</p>
+                          <div className="min-w-0 flex-1 pt-0.5">
+                            <p className="text-[15px] font-bold leading-snug text-ink line-clamp-2">{l.name}</p>
                             <p className="tnum mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
                               <span>{formatMoney(l.unitPrice)} <span className="opacity-70">×</span> {l.quantity}</span>
                               {l.priceTier !== 'standard' && (
@@ -1141,14 +1142,14 @@ export default function SellPage() {
                               )}
                             </p>
                           </div>
-                          <Stepper value={l.quantity} max={l.stock} onChange={(v) => setQty(lineKey(l.productId, l.priceTier), v)} />
-                          <div className="w-[74px] shrink-0 text-right">
-                            <p className="tnum text-[15px] font-black text-ink">{formatMoney(l.unitPrice * l.quantity)}</p>
+                          <div className="flex shrink-0 flex-col items-end gap-1.5">
+                            <p className="tnum text-[16px] font-black text-ink">{formatMoney(l.unitPrice * l.quantity)}</p>
+                            <Stepper value={l.quantity} max={l.stock} onChange={(v) => setQty(lineKey(l.productId, l.priceTier), v)} />
                           </div>
                           <button
                             onClick={() => removeLine(lineKey(l.productId, l.priceTier))}
                             aria-label={`Remove ${l.name}`}
-                            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-ink-muted/70 transition hover:bg-danger-bg hover:text-danger active:scale-90"
+                            className="grid h-9 w-9 shrink-0 place-items-center self-center rounded-full text-ink-muted/70 transition hover:bg-danger-bg hover:text-danger active:scale-90"
                           >
                             <Icon name="close" size={18} />
                           </button>
@@ -1459,10 +1460,10 @@ function ReceiptBody({
   const soldAt = new Date(receipt.sold_at);
   const text = print ? 'text-black' : 'text-ink';
   return (
-    <div className={`${text} font-mono text-[13px] leading-relaxed`}>
+    <div className={`${text} mx-auto w-full max-w-[300px] font-mono text-[13px] leading-relaxed`}>
       <div className="text-center mb-2">
-        <p className="font-display text-xl font-bold">Church Bookshop</p>
-        <p className="tnum font-bold">{receipt.receipt_number}</p>
+        <ReceiptLogo />
+        <p className="tnum mt-2 font-bold">{receipt.receipt_number}</p>
         <p className="text-xs opacity-70">
           {soldAt.toLocaleDateString('en-GH', { day: 'numeric', month: 'short', year: 'numeric' })}{' '}
           {soldAt.toLocaleTimeString('en-GH', { hour: '2-digit', minute: '2-digit' })}
