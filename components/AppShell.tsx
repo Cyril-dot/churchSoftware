@@ -576,7 +576,7 @@ export default function AppShell({
         aria-label={sidebarHidden ? 'Show sidebar' : 'Hide sidebar'}
         title={sidebarHidden ? 'Show sidebar  ( [ )' : 'Hide sidebar  ( [ )'}
         initial={false}
-        animate={{ x: (sidebarHidden ? 0 : collapsed ? 80 : 264) - 14, y: '-50%' }}
+        animate={{ x: (sidebarHidden ? 0 : collapsed ? 80 : 264) - 18, y: '-50%' }}
         transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
         drag="x"
         dragConstraints={{ left: -70, right: 70 }}
@@ -589,15 +589,24 @@ export default function AppShell({
           else if (sidebarHidden && (info.offset.x > 45 || info.velocity.x > 350)) setSidebarHidden(false);
         }}
         onClick={() => { if (!handleDragged.current) setSidebarHidden((v) => !v); }}
-        whileHover={{ scale: 1.12 }}
+        whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.92, cursor: 'grabbing' }}
-        className="absolute top-1/2 left-0 z-50 block h-28 w-7 cursor-grab touch-none"
+        className="absolute top-1/2 left-0 z-50 block h-40 w-9 cursor-grab touch-none"
       >
-        <span className="flex h-full w-full flex-col items-center justify-center gap-[5px] rounded-full border border-[#D9B15A]/35 bg-gradient-to-b from-[#4A3626] via-[#33261A] to-[#201812] shadow-[0_6px_20px_rgba(0,0,0,0.5)] transition-shadow hover:shadow-[0_6px_24px_rgba(217,177,90,0.4)]">
-          <span className="h-[3px] w-3.5 rounded-full bg-[#D9B15A]/80" />
-          <span className="h-[3px] w-3.5 rounded-full bg-[#D9B15A]/80" />
-          <span className="h-[3px] w-3.5 rounded-full bg-[#D9B15A]/80" />
-        </span>
+        <motion.span
+          className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-full border-2 border-[#D9B15A]/60 bg-gradient-to-b from-[#5A422C] via-[#3A2C1E] to-[#241A12] shadow-[0_8px_28px_rgba(0,0,0,0.55),0_0_18px_rgba(217,177,90,0.35)]"
+          animate={{ boxShadow: [
+            '0 8px 28px rgba(0,0,0,0.55), 0 0 18px rgba(217,177,90,0.35)',
+            '0 8px 28px rgba(0,0,0,0.55), 0 0 32px rgba(217,177,90,0.65)',
+            '0 8px 28px rgba(0,0,0,0.55), 0 0 18px rgba(217,177,90,0.35)',
+          ] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+        >
+          <span className="h-1 w-5 rounded-full bg-[#D9B15A]" />
+          <span className="h-1 w-5 rounded-full bg-[#D9B15A]" />
+          <span className="h-1 w-5 rounded-full bg-[#D9B15A]" />
+          <span className="h-1 w-5 rounded-full bg-[#D9B15A]" />
+        </motion.span>
       </motion.button>
       </div>
 
