@@ -315,7 +315,7 @@ export default function SalesClient({ user }: { user: SessionUser }) {
     <motion.div variants={listVariants} initial="hidden" animate="show">
       {/* Print styles — receipt only */}
       <style>{`
-        @page { size: A4; margin: 14mm; }
+        @page { size: 80mm auto; margin: 3mm; }
         @media print {
           .receipt-no-print { display: none !important; }
           .receipt-print-only { display: block !important; }

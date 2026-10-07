@@ -784,7 +784,7 @@ export default function SellPage() {
       <Toaster position="top-center" richColors closeButton />
       {/* Print styles — receipt only */}
       <style>{`
-        @page { size: A4; margin: 14mm; }
+        @page { size: 80mm auto; margin: 3mm; }
         @media print {
           .pos-no-print { display: none !important; }
           .pos-print-only { display: block !important; }
