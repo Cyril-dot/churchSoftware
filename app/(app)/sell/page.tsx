@@ -443,7 +443,7 @@ function ProductCard({
                 {TIER_STAMP[priceTier]}
               </p>
             )}
-            <p className="tnum font-display text-[22px] font-bold leading-none text-wine">
+            <p className="tnum font-display text-[22px] font-bold leading-none break-words text-wine">
               {formatMoney(tierPrice)}
             </p>
             {tiered && (
