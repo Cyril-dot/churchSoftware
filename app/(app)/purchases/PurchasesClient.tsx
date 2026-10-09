@@ -732,11 +732,11 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
                       {STATUS_LABELS[o.status] ?? o.status}
                     </StampBadge>
                   </div>
-                  <div className="mt-3 flex items-center justify-between border-t border-[var(--border)] pt-3">
-                    <span className="text-xs font-semibold text-[var(--ink-muted)]">
+                  <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
+                    <span className="min-w-0 truncate text-xs font-semibold text-[var(--ink-muted)]">
                       {o.itemCount} line{o.itemCount === 1 ? '' : 's'}
                     </span>
-                    <span className="tnum text-lg font-bold text-[var(--ink)]">
+                    <span className="tnum shrink-0 text-lg font-bold text-[var(--ink)]">
                       {formatMoney(o.totalCost)}
                     </span>
                   </div>
