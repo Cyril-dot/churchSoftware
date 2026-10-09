@@ -487,7 +487,7 @@ export default function SalesClient({ user }: { user: SessionUser }) {
                 className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 text-left shadow-[var(--shadow)] transition hover:-translate-y-0.5 hover:shadow-lg"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
                     <span
                       className={`flex h-11 w-11 items-center justify-center rounded-xl ${
                         s.status === 'voided'
@@ -507,13 +507,13 @@ export default function SalesClient({ user }: { user: SessionUser }) {
                   </div>
                   <StatusBadge s={s.status} />
                 </div>
-                <div className="mt-3 flex items-center justify-between border-t border-[var(--border)] pt-3">
-                  <span className="text-xs font-semibold text-[var(--ink-muted)]">
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
+                  <span className="min-w-0 truncate text-xs font-semibold text-[var(--ink-muted)]">
                     {s.itemCount} item{s.itemCount === 1 ? '' : 's'} ·{' '}
                     {METHOD_LABELS[s.paymentMethod] ?? s.paymentMethod}
                   </span>
                   <span
-                    className={`tnum text-lg font-bold ${s.status === 'voided' ? 'text-[var(--ink-muted)] line-through' : 'text-[var(--ink)]'}`}
+                    className={`tnum shrink-0 text-lg font-bold ${s.status === 'voided' ? 'text-[var(--ink-muted)] line-through' : 'text-[var(--ink)]'}`}
                   >
                     {formatMoney(s.total)}
                   </span>

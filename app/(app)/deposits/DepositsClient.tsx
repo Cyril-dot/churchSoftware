@@ -438,7 +438,7 @@ export default function DepositsClient({ role }: { role: Role }) {
                 </p>
               </div>
             </div>
-            <p className="tnum font-display mt-3 text-4xl leading-none text-[var(--ink)] sm:text-5xl">
+            <p className="tnum font-display mt-3 text-4xl leading-none break-words text-[var(--ink)] sm:text-5xl">
               {formatMoney(momoBalance)}
             </p>
             <div className="mt-5 grid grid-cols-3 gap-2">
@@ -613,7 +613,7 @@ export default function DepositsClient({ role }: { role: Role }) {
                       <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--ink-muted)]">
                         Total deposited
                       </p>
-                      <p className="tnum font-display mt-0.5 text-2xl leading-none text-[var(--brass)]">
+                      <p className="tnum font-display mt-0.5 text-2xl leading-none break-words text-[var(--brass)]">
                         {formatMoney(a.totalDeposited)}
                       </p>
                     </div>
