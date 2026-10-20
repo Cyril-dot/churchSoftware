@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation';
 import { getSessionUserFromCookies } from '@/lib/auth';
 import { getSql, isDbConfigured } from '@/lib/db';
 import { can } from '@/lib/rbac';
+import { LOW_STOCK_SQL, LOW_STOCK_REASON_SQL, lowStockReason } from '@/lib/low-stock';
+import { creditStatus } from '@/lib/credit';
 import DashboardClient, { type DashboardData } from './DashboardClient';
 
 export const metadata = { title: 'Home' };
@@ -16,6 +18,8 @@ const EMPTY: DashboardData = {
   recent: [],
   lowStock: [],
   ownScope: false,
+  overdueCreditCount: 0,
+  overdueCreditBalance: 0,
 };
 
 async function loadDashboard(userId: string, role: 'admin' | 'manager' | 'cashier'): Promise<DashboardData> {
@@ -64,14 +68,38 @@ async function loadDashboard(userId: string, role: 'admin' | 'manager' | 'cashie
     let lowStock: DashboardData['lowStock'] = [];
     let lowStockCount = 0;
     if (showInventory) {
-      lowStock = (await sql`
-        SELECT id, name, quantity_on_hand AS qty, reorder_level AS reorder,
-               selling_price::float8 AS price
-        FROM products
-        WHERE active AND quantity_on_hand <= reorder_level
-        ORDER BY quantity_on_hand ASC LIMIT 10
-      `) as DashboardData['lowStock'];
-      lowStockCount = lowStock.length;
+      lowStock = (await sql.query(
+        `SELECT p.id, p.name, p.quantity_on_hand AS qty, p.reorder_level AS reorder,
+                p.selling_price::float8 AS price,
+                (${LOW_STOCK_REASON_SQL}) AS reason
+           FROM products p
+           LEFT JOIN categories c ON c.id = p.category_id
+          WHERE p.active AND (${LOW_STOCK_SQL})
+          ORDER BY p.quantity_on_hand ASC LIMIT 10`
+      )) as DashboardData['lowStock'];
+      const countRows = (await sql.query(
+        `SELECT COUNT(*)::int AS n
+           FROM products p
+           LEFT JOIN categories c ON c.id = p.category_id
+          WHERE p.active AND (${LOW_STOCK_SQL})`
+      )) as { n: number }[];
+      lowStockCount = countRows[0]?.n ?? lowStock.length;
+    }
+
+    let overdueCreditCount = 0;
+    let overdueCreditBalance = 0;
+    if (can(role, 'manageCredit')) {
+      const ocRows = (await sql`
+        SELECT COUNT(*)::int AS n,
+               COALESCE(SUM(cs.total - COALESCE(pay.paid, 0)), 0)::float8 AS balance
+          FROM credit_sales cs
+          LEFT JOIN (
+            SELECT credit_sale_id, SUM(amount) AS paid FROM credit_payments GROUP BY credit_sale_id
+          ) pay ON pay.credit_sale_id = cs.id
+         WHERE cs.due_date < CURRENT_DATE AND cs.total > COALESCE(pay.paid, 0)
+      `) as { n: number; balance: number }[];
+      overdueCreditCount = ocRows[0]?.n ?? 0;
+      overdueCreditBalance = ocRows[0]?.balance ?? 0;
     }
 
     let topItem: DashboardData['topItem'] = null;
@@ -98,6 +126,8 @@ async function loadDashboard(userId: string, role: 'admin' | 'manager' | 'cashie
       recent: recentRows.map((r) => ({ ...r, soldAt: String(r.soldAt) })),
       lowStock,
       ownScope,
+      overdueCreditCount,
+      overdueCreditBalance,
     };
   } catch (err) {
     console.error('Dashboard load failed:', err);
@@ -106,14 +136,50 @@ async function loadDashboard(userId: string, role: 'admin' | 'manager' | 'cashie
 }
 
 function loadDemoDashboard(userId: string, role: 'admin' | 'manager' | 'cashier'): DashboardData {
-  const { DEMO_SALES, DEMO_PRODUCTS } = require('@/lib/demo-data');
+  const { DEMO_SALES, DEMO_PRODUCTS, DEMO_CREDIT_SALES } = require('@/lib/demo-data');
   const ownScope = role === 'cashier';
   const sales = ownScope ? DEMO_SALES.filter((s: any) => s.sold_by === userId) : DEMO_SALES;
   const today = new Date().toISOString().slice(0, 10);
   const todaySales = sales.filter((s: any) => s.sold_at.slice(0, 10) === today);
   const revenueToday = todaySales.reduce((s: number, x: any) => s + x.total, 0);
-  const lowStock = DEMO_PRODUCTS.filter((p: any) => p.active && p.quantity_on_hand <= p.reorder_level)
-    .map((p: any) => ({ id: p.id, name: p.name, qty: p.quantity_on_hand, reorder: p.reorder_level }));
+  const lowStock = DEMO_PRODUCTS.filter((p: any) => p.active)
+    .map((p: any) => ({
+      product: p,
+      reason: lowStockReason({
+        productType: p.product_type,
+        categoryName: p.category,
+        quantityShop: p.quantity_shop,
+        quantityWarehouse: p.quantity_warehouse,
+        quantityOnHand: p.quantity_on_hand,
+        reorderLevel: p.reorder_level,
+      }),
+    }))
+    .filter((x: any) => x.reason != null)
+    .map((x: any) => ({
+      id: x.product.id,
+      name: x.product.name,
+      qty: x.product.quantity_on_hand,
+      reorder: x.product.reorder_level,
+      reason: x.reason,
+    }));
+
+  // Overdue credit (seed data — demo API keeps its own live copy)
+  let overdueCreditCount = 0;
+  let overdueCreditBalance = 0;
+  if (can(role, 'manageCredit')) {
+    for (const cs of DEMO_CREDIT_SALES ?? []) {
+      const paid = (cs.payments ?? []).reduce((s: number, p: any) => s + p.amount, 0);
+      const total = (cs.items ?? []).reduce(
+        (s: number, i: any) => s + i.quantity * i.unit_price,
+        0
+      );
+      const st = creditStatus(total, paid, cs.due_date);
+      if (st.overdue) {
+        overdueCreditCount++;
+        overdueCreditBalance += st.balance;
+      }
+    }
+  }
 
   // Last 7 days
   const daily: Array<{ day: string; label: string; revenue: number; n: number }> = [];
@@ -151,6 +217,8 @@ function loadDemoDashboard(userId: string, role: 'admin' | 'manager' | 'cashier'
     })),
     lowStock: lowStock.slice(0, 6),
     ownScope,
+    overdueCreditCount,
+    overdueCreditBalance,
   };
 }
 

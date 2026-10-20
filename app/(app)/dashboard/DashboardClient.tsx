@@ -39,6 +39,7 @@ export interface LowStockItem {
   qty: number;
   reorder: number;
   price: number;
+  reason?: string | null;
 }
 export interface DashboardData {
   revenueToday: number;
@@ -50,6 +51,8 @@ export interface DashboardData {
   recent: RecentSale[];
   lowStock: LowStockItem[];
   ownScope: boolean;
+  overdueCreditCount: number;
+  overdueCreditBalance: number;
 }
 
 interface TopSeller {
@@ -558,6 +561,15 @@ export default function DashboardClient({
       tone: 'danger',
     });
   }
+  if (can(role, 'manageCredit') && data.overdueCreditCount > 0) {
+    attentionItems.push({
+      icon: 'account_balance_wallet',
+      label: `${data.overdueCreditCount} overdue credit account${data.overdueCreditCount === 1 ? '' : 's'}`,
+      detail: `${formatMoney(data.overdueCreditBalance)} still outstanding past the due date`,
+      href: '/credit?status=overdue',
+      tone: 'danger',
+    });
+  }
   if (can(role, 'manageDeposits') && unbanked != null && unbanked > 0.5) {
     attentionItems.push({
       icon: 'savings',
@@ -577,7 +589,7 @@ export default function DashboardClient({
     });
   }
   const showAttention =
-    showInventory || can(role, 'manageDeposits') || can(role, 'managePurchases');
+    showInventory || can(role, 'manageDeposits') || can(role, 'managePurchases') || can(role, 'manageCredit');
 
   return (
     <motion.div variants={listVariants} initial="hidden" animate="show" className="space-y-5">
