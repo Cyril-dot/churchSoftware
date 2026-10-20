@@ -44,13 +44,13 @@ interface CartLine {
 const POS_TIER_LABELS: Record<string, string> = {
   bishop: 'Bishop',
   sons_of_prophet: 'Sons of Prophet',
-  pastor_deji: 'Pastor Deji',
+  pastor_deji: 'Outreach',
 };
 const PRICE_TIERS: { value: PriceTier; label: string; stamp: string }[] = [
   { value: 'standard', label: 'Standard', stamp: 'STD' },
   { value: 'bishop', label: 'Bishop', stamp: 'BISHOP' },
   { value: 'sons_of_prophet', label: 'Sons of Prophet', stamp: 'SONS OF PROPHET' },
-  { value: 'pastor_deji', label: 'Pastor Deji', stamp: 'PASTOR DEJI' },
+  { value: 'pastor_deji', label: 'Outreach', stamp: 'OUTREACH' },
 ];
 
 const TIER_STAMP: Record<PriceTier, string> = Object.fromEntries(
