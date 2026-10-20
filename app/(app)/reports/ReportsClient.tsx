@@ -157,9 +157,10 @@ interface ChapterDef {
   reports: ReportDef[];
 }
 
-/* The Sales and Profit reports below share one data-backed report view
-   (the API exposes sales + profit in the same endpoints). Inventory, Staff
-   and Deposits reports are marked "Coming soon" — no fake data is invented. */
+/* The Sales and Profit reports share one data-backed report view
+   (the API exposes sales + profit in the same endpoints). The Inventory
+   reports below are backed by /api/v1/reports/stock, /low-stock and
+   /movements. Staff and Deposits reports are still "Coming soon". */
 const REPORT_LIBRARY: ChapterDef[] = [
   {
     chapter: 'Chapter One',
@@ -199,7 +200,7 @@ const REPORT_LIBRARY: ChapterDef[] = [
         name: 'Stock movement',
         desc: 'Stock in, stock out and adjustments across locations.',
         tone: 'olive',
-        openable: false,
+        openable: true,
       },
       {
         id: 'low-stock',
@@ -207,7 +208,7 @@ const REPORT_LIBRARY: ChapterDef[] = [
         name: 'Low stock',
         desc: 'Items running low or out of stock, by location.',
         tone: 'olive',
-        openable: false,
+        openable: true,
       },
     ],
   },
@@ -429,6 +430,36 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
             </div>
           </section>
         ))}
+      </motion.div>
+    );
+  }
+
+  /* ─────────────── Inventory report views ─────────────── */
+
+  if (
+    view === 'report' &&
+    (activeReport?.id === 'stock-movement' || activeReport?.id === 'low-stock')
+  ) {
+    return (
+      <motion.div variants={listVariants} initial="hidden" animate="show">
+        <nav aria-label="Breadcrumb" className="mb-4">
+          <button
+            type="button"
+            onClick={backToLibrary}
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-3 text-sm font-bold text-[var(--wine)] transition hover:bg-[var(--wine-tint)]"
+          >
+            <Icon name="arrow_back" size={20} /> Reports library
+          </button>
+        </nav>
+        <PageHeader
+          title={activeReport.name}
+          subtitle={
+            activeReport.id === 'low-stock'
+              ? 'Items flagged by the low-stock rules, with shop and warehouse quantities'
+              : 'Current stock by location, plus every stock movement in the period'
+          }
+        />
+        <InventoryReportView reportId={activeReport.id} />
       </motion.div>
     );
   }
@@ -771,5 +802,261 @@ export default function ReportsClient({ user }: { user: SessionUser }) {
         <EmptyState icon="bar_chart" title="No report data" />
       )}
     </motion.div>
+  );
+}
+
+/* ═══════════════════════ Inventory reports ═══════════════════════ */
+
+interface StockRow {
+  id: string;
+  name: string;
+  sku: string | null;
+  categoryName: string | null;
+  productType: string;
+  quantityShop: number;
+  quantityWarehouse: number;
+  quantityOnHand: number;
+  reorderLevel: number;
+  sellingPrice: number;
+  isLow: boolean;
+  lowReason: string | null;
+}
+
+interface MovementRow {
+  id: string;
+  productName: string;
+  sku: string | null;
+  movementType: string;
+  quantityChange: number;
+  unitCost: number | null;
+  referenceType: string | null;
+  notes: string | null;
+  createdByName: string | null;
+  createdAt: string;
+}
+
+const MOVEMENT_LABELS: Record<string, string> = {
+  purchase_receipt: 'Purchase receipt',
+  sale: 'Sale',
+  adjustment: 'Adjustment',
+  return: 'Return',
+  damage: 'Damage',
+  transfer_out: 'Transfer out',
+  transfer_in: 'Transfer in',
+  delivery: 'Warehouse delivery',
+  credit_sale: 'Credit sale',
+};
+
+function StockTable({ rows, showReason }: { rows: StockRow[]; showReason?: boolean }) {
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon="inventory_2"
+        title="Nothing to show"
+        body={showReason ? 'No items are low on stock right now.' : 'No active items.'}
+      />
+    );
+  }
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[640px] text-left text-[15px]">
+        <thead>
+          <tr className="ledger-row text-[13px] uppercase tracking-wide text-[var(--ink-muted)]">
+            <th scope="col" className="py-3 pr-4 font-semibold">Item</th>
+            <th scope="col" className="py-3 pr-4 font-semibold">Category</th>
+            <th scope="col" className="py-3 pr-4 text-right font-semibold">Shop</th>
+            <th scope="col" className="py-3 pr-4 text-right font-semibold">Warehouse</th>
+            <th scope="col" className="py-3 pr-4 text-right font-semibold">Total</th>
+            <th scope="col" className="py-3 font-semibold">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id} className="ledger-row">
+              <td className="py-3 pr-4 font-semibold">{r.name}</td>
+              <td className="py-3 pr-4 text-[var(--ink-muted)]">{r.categoryName ?? '—'}</td>
+              <td className="tnum py-3 pr-4 text-right font-bold">{r.quantityShop}</td>
+              <td className="tnum py-3 pr-4 text-right font-bold">{r.quantityWarehouse}</td>
+              <td className="tnum py-3 pr-4 text-right font-bold">{r.quantityOnHand}</td>
+              <td className="py-3">
+                {r.isLow ? (
+                  <span className="flex flex-col gap-0.5">
+                    <Badge tone="red">Low stock</Badge>
+                    {showReason && r.lowReason && (
+                      <span className="text-xs text-[var(--danger)]">{r.lowReason}</span>
+                    )}
+                  </span>
+                ) : (
+                  <Badge tone="green">In stock</Badge>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function InventoryReportView({ reportId }: { reportId: string }) {
+  const [stock, setStock] = useState<StockRow[] | null>(null);
+  const [movements, setMovements] = useState<MovementRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [mvFrom, setMvFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [mvTo, setMvTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [mvType, setMvType] = useState('');
+
+  const fetchStock = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api<{ items: StockRow[] }>(
+        reportId === 'low-stock' ? '/api/v1/reports/low-stock' : '/api/v1/reports/stock'
+      );
+      setStock(data.items);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load stock report.');
+    } finally {
+      setLoading(false);
+    }
+  }, [reportId]);
+
+  const fetchMovements = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({
+        from: new Date(mvFrom).toISOString(),
+        to: new Date(new Date(mvTo).setHours(23, 59, 59, 999)).toISOString(),
+      });
+      if (mvType) params.set('type', mvType);
+      const data = await api<{ items: MovementRow[] }>(`/api/v1/reports/movements?${params}`);
+      setMovements(data.items);
+    } catch {
+      setMovements([]);
+    }
+  }, [mvFrom, mvTo, mvType]);
+
+  useEffect(() => {
+    fetchStock();
+  }, [fetchStock]);
+
+  useEffect(() => {
+    if (reportId === 'stock-movement') fetchMovements();
+  }, [reportId, fetchMovements]);
+
+  if (loading) {
+    return (
+      <>
+        <SkeletonCards count={2} />
+        <div className="mt-4"><SkeletonRows rows={6} /></div>
+      </>
+    );
+  }
+  if (error) return <ErrorState message={error} onRetry={fetchStock} />;
+
+  return (
+    <div>
+      {reportId === 'low-stock' && (
+        <motion.div
+          variants={riseVariants}
+          className="paper-texture mb-5 rounded-2xl border border-[var(--border)] p-4 shadow-[var(--shadow)] sm:p-5"
+        >
+          <h2 className="font-display text-base text-[var(--ink)]">Low-stock rules</h2>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--ink-muted)]">
+            <li><strong className="text-[var(--ink)]">Bishop Books</strong> — low when shop stock is under 10 <em>or</em> warehouse stock is under 100.</li>
+            <li><strong className="text-[var(--ink)]">Bibles</strong> — low when total stock is under 2.</li>
+            <li><strong className="text-[var(--ink)]">All other items</strong> — low at or below their reorder level.</li>
+          </ul>
+        </motion.div>
+      )}
+
+      <motion.section
+        variants={riseVariants}
+        aria-label={reportId === 'low-stock' ? 'Low stock items' : 'Stock by location'}
+        className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6"
+      >
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h2 className="font-display text-lg text-[var(--ink)]">
+            {reportId === 'low-stock' ? 'Low-stock items' : 'Stock by location'}
+          </h2>
+          <SecondaryButton onClick={fetchStock}>
+            <Icon name="refresh" size={20} /> Refresh
+          </SecondaryButton>
+        </div>
+        <StockTable rows={stock ?? []} showReason />
+      </motion.section>
+
+      {reportId === 'stock-movement' && (
+        <motion.section
+          variants={riseVariants}
+          aria-label="Stock movements"
+          className="mt-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow)] sm:p-6"
+        >
+          <h2 className="font-display text-lg text-[var(--ink)]">Stock movements</h2>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="From" htmlFor="mv-from">
+              <input id="mv-from" type="date" className={inputClass} value={mvFrom}
+                onChange={(e) => setMvFrom(e.target.value)} />
+            </Field>
+            <Field label="To" htmlFor="mv-to">
+              <input id="mv-to" type="date" className={inputClass} value={mvTo} min={mvFrom || undefined}
+                onChange={(e) => setMvTo(e.target.value)} />
+            </Field>
+            <Field label="Type" htmlFor="mv-type">
+              <select id="mv-type" className={inputClass} value={mvType}
+                onChange={(e) => setMvType(e.target.value)}>
+                <option value="">All types</option>
+                {Object.entries(MOVEMENT_LABELS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          {movements == null ? (
+            <div className="mt-4"><SkeletonRows rows={5} /></div>
+          ) : movements.length === 0 ? (
+            <p className="mt-4 text-sm text-[var(--ink-muted)]">No movements in this period.</p>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[680px] text-left text-[15px]">
+                <thead>
+                  <tr className="ledger-row text-[13px] uppercase tracking-wide text-[var(--ink-muted)]">
+                    <th scope="col" className="py-3 pr-4 font-semibold">Date</th>
+                    <th scope="col" className="py-3 pr-4 font-semibold">Item</th>
+                    <th scope="col" className="py-3 pr-4 font-semibold">Type</th>
+                    <th scope="col" className="py-3 pr-4 text-right font-semibold">Change</th>
+                    <th scope="col" className="py-3 font-semibold">By / notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {movements.map((m) => (
+                    <tr key={m.id} className="ledger-row">
+                      <td className="py-3 pr-4 whitespace-nowrap text-[var(--ink-muted)]">
+                        {new Date(m.createdAt).toLocaleString('en-GH', {
+                          day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                        })}
+                      </td>
+                      <td className="py-3 pr-4 font-semibold">{m.productName}</td>
+                      <td className="py-3 pr-4">{MOVEMENT_LABELS[m.movementType] ?? m.movementType}</td>
+                      <td className={`tnum py-3 pr-4 text-right font-bold ${m.quantityChange < 0 ? 'text-[var(--danger)]' : 'text-[var(--success)]'}`}>
+                        {m.quantityChange > 0 ? `+${m.quantityChange}` : m.quantityChange}
+                      </td>
+                      <td className="py-3 text-[var(--ink-muted)]">
+                        {m.createdByName ?? ''}
+                        {m.notes ? <span className="block text-xs">{m.notes}</span> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.section>
+      )}
+    </div>
   );
 }

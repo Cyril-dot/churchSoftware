@@ -33,6 +33,7 @@ interface PurchaseRow {
   id: string;
   referenceNumber: string;
   invoiceNumber: string | null;
+  paymentMethod: string;
   supplierId: string;
   supplierName: string | null;
   status: string;
@@ -48,6 +49,7 @@ interface PurchaseDetail {
   id: string;
   referenceNumber: string;
   invoiceNumber: string | null;
+  paymentMethod: string;
   supplierId: string;
   supplierName: string | null;
   status: string;
@@ -358,6 +360,7 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
   const [supplierId, setSupplierId] = useState('');
   const [reference, setReference] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cash');
   const [notes, setNotes] = useState('');
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [createBusy, setCreateBusy] = useState(false);
@@ -465,6 +468,7 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
     setSupplierId('');
     setReference('');
     setInvoiceNumber('');
+    setPaymentMethod('cash');
     setNotes('');
     setLines([]);
     setCreateOpen(true);
@@ -490,6 +494,7 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
           supplierId,
           referenceNumber: reference.trim() || undefined,
           invoiceNumber: invoiceNumber.trim() || undefined,
+          paymentMethod,
           notes: notes.trim() || undefined,
           items: valid.map((l) => ({
             productId: l.productId,
@@ -537,8 +542,15 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
     if (!detail) return;
     setActionBusy(true);
     try {
-      await api(`/api/v1/purchases/${detail.id}/receive`, { method: 'POST' });
-      toast.success('Goods received — stock and costs updated.');
+      const res = await api<{ paymentDeducted?: boolean; paymentMethod?: string; paymentAmount?: number }>(
+        `/api/v1/purchases/${detail.id}/receive`,
+        { method: 'POST' }
+      );
+      toast.success(
+        res.paymentDeducted
+          ? `Goods received — ${formatMoney(res.paymentAmount ?? 0)} deducted from ${res.paymentMethod === 'momo' ? 'MoMo' : 'cash'}.`
+          : 'Goods received — stock and costs updated.'
+      );
       setReceiveConfirm(false);
       await refreshDetail(detail.id);
       fetchOrders();
@@ -805,6 +817,21 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
               placeholder="e.g. INV-123"
             />
           </Field>
+          <Field
+            label="Payment method"
+            htmlFor="po-payment"
+            hint="Deducted automatically from this balance when the goods are received."
+          >
+            <select
+              id="po-payment"
+              className={inputClass}
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+            >
+              <option value="cash">Cash</option>
+              <option value="momo">MoMo</option>
+            </select>
+          </Field>
           <LineEditor lines={lines} setLines={setLines} />
           {lines.length > 0 && (
             <div className="paper-texture rounded-xl border border-[var(--border)] px-4 py-3">
@@ -857,6 +884,10 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
                 )}
                 <p className="mt-0.5 text-sm text-[var(--ink-muted)]">
                   {detail.supplierName} · {fmtDate(detail.orderedAt)}
+                </p>
+                <p className="mt-0.5 text-sm text-[var(--ink-muted)]">
+                  Paid by <strong className="text-[var(--ink)]">{detail.paymentMethod === 'momo' ? 'MoMo' : 'Cash'}</strong>
+                  {detail.status === 'received' && ' · deducted on receive'}
                 </p>
               </div>
             </div>
@@ -949,7 +980,10 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
           <>
             All line items will be received into the <strong>warehouse</strong> and item costs
             updated to the weighted average. Total:{' '}
-            <strong className="tnum">{formatMoney(detail?.totalCost ?? 0)}</strong>.
+            <strong className="tnum">{formatMoney(detail?.totalCost ?? 0)}</strong>. The total
+            will be <strong>deducted automatically</strong> from the{' '}
+            <strong>{detail?.paymentMethod === 'momo' ? 'MoMo balance' : 'cash (till)'}</strong>{' '}
+            because this purchase was paid by {detail?.paymentMethod === 'momo' ? 'MoMo' : 'cash'}.
           </>
         }
         confirmLabel="Receive into warehouse"
