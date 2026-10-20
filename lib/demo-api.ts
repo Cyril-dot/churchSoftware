@@ -4,15 +4,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   DEMO_USERS, DEMO_PRODUCTS, DEMO_SALES, DEMO_SETTINGS, DEMO_CATEGORIES, DEMO_SUPPLIERS,
-  DEMO_DEPOSIT_ACCOUNTS, DEMO_DELIVERY_ORDERS, DEMO_CREDIT_SALES, DEMO_TODOS,
-  type DemoDeliveryOrder, type DemoCreditSale, type DemoTodo,
+  DEMO_DEPOSIT_ACCOUNTS, DEMO_DEPOSITS, DEMO_DELIVERY_ORDERS, DEMO_CREDIT_SALES, DEMO_TODOS,
+  type DemoDeposit, type DemoDeliveryOrder, type DemoCreditSale, type DemoTodo,
 } from './demo-data';
 import { lowStockReason } from './low-stock';
 import { creditStatus } from './credit';
 
 const DEMO_MOMO = {
   balance: 1240.5,
-  entries: [] as Array<{
+  entries: [
+    /* Auto-deduction for the seeded, already-received PO-DEMO-001
+       (10 × GH₵85 = GH₵850 by MoMo) — keeps the ledger consistent with
+       the purchase's paymentDeductedAt. Balance before: 2090.50. */
+    {
+      id: 'momo-seed-1',
+      entryType: 'withdrawal',
+      amount: 850,
+      balanceAfter: 1240.5,
+      reference: 'PO-DEMO-001',
+      notes: 'Payment for Purchase PO-DEMO-001 (Invoice INV-SUP-1001) — auto-deducted on receive.',
+      createdBy: 'demo-manager',
+      createdByName: 'Kwame Mensah',
+      createdAt: new Date(Date.now() - 5 * 86400_000).toISOString(),
+    },
+  ] as Array<{
     id: string; entryType: string; amount: number; balanceAfter: number;
     reference: string | null; notes: string | null;
     createdBy: string; createdByName: string; createdAt: string;
@@ -45,6 +60,24 @@ const DEMO_CREDIT: DemoCreditLive[] = DEMO_CREDIT_SALES.map((c) => ({
 let demoCreditSeq = DEMO_CREDIT.length;
 
 const DEMO_TODOS_LIVE: DemoTodo[] = DEMO_TODOS.map((t) => ({ ...t }));
+
+/* Deposits: one seeded dataset; account summaries and the timeline are both
+   computed from this store, and POST appends to it. */
+const DEMO_DEPOSITS_LIVE: DemoDeposit[] = DEMO_DEPOSITS.map((d) => ({ ...d }));
+let demoDepositSeq = DEMO_DEPOSITS_LIVE.length;
+
+const toDemoDeposit = (d: DemoDeposit) => ({
+  id: d.id,
+  referenceNumber: d.reference_number,
+  depositAccountId: d.deposit_account_id,
+  depositAccountName: DEMO_DEPOSIT_ACCOUNTS.find((a) => a.id === d.deposit_account_id)?.name ?? 'Account',
+  amount: d.amount,
+  depositedOn: d.deposited_on,
+  depositedBy: d.deposited_by,
+  depositedByName: d.deposited_by_name,
+  notes: d.notes,
+  createdAt: d.created_at,
+});
 
 interface DemoMovement {
   id: string; productId: string; productName: string; sku: string | null;
@@ -453,31 +486,51 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
   // ── Deposit accounts ──
   if (path === '/api/v1/deposit-accounts' && method === 'GET') {
     return ok({
-      items: DEMO_DEPOSIT_ACCOUNTS.map((a) => ({
-        ...a, active: true, totalDeposited: 1250 + Math.random() * 500,
-        depositCount: 3, lastDepositOn: new Date().toISOString().slice(0, 10),
-        createdAt: new Date().toISOString(),
-      })),
+      items: DEMO_DEPOSIT_ACCOUNTS.map((a) => {
+        const mine = DEMO_DEPOSITS_LIVE.filter((d) => d.deposit_account_id === a.id);
+        return {
+          id: a.id,
+          name: a.name,
+          bankName: a.bank_name,
+          accountNumber: a.account_number,
+          active: true,
+          totalDeposited: Math.round(mine.reduce((s, d) => s + d.amount, 0) * 100) / 100,
+          depositCount: mine.length,
+          lastDepositOn: mine.length
+            ? mine.map((d) => d.deposited_on).sort().at(-1) ?? null
+            : null,
+          createdAt: new Date().toISOString(),
+        };
+      }),
     });
   }
   if (path === '/api/v1/deposits' && method === 'GET') {
-    return ok({ items: [], nextCursor: null });
+    const accountId = req.nextUrl.searchParams.get('accountId');
+    const limit = Math.min(100, Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') || '50', 10) || 50));
+    let items = DEMO_DEPOSITS_LIVE.slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
+    if (accountId) items = items.filter((d) => d.deposit_account_id === accountId);
+    return ok({ items: items.slice(0, limit).map(toDemoDeposit), nextCursor: null });
   }
   if (path === '/api/v1/deposits' && method === 'POST') {
     const body = await req.json().catch(() => ({}));
     const acct = DEMO_DEPOSIT_ACCOUNTS.find((a) => a.id === body.depositAccountId);
-    return ok({
-      id: `dep-demo-${Date.now()}`,
-      referenceNumber: `D-${String(Math.floor(Math.random() * 900000) + 100000)}`,
-      depositAccountId: body.depositAccountId,
-      depositAccountName: acct?.name ?? 'Account',
+    if (!acct) {
+      return NextResponse.json({ error: { code: 'INVALID_ACCOUNT', message: 'That deposit account does not exist.' } }, { status: 400 });
+    }
+    demoDepositSeq += 1;
+    const deposit: DemoDeposit = {
+      id: `dep-${demoDepositSeq}`,
+      reference_number: `D-${String(demoDepositSeq).padStart(6, '0')}`,
+      deposit_account_id: acct.id,
       amount: body.amount ?? 0,
-      depositedOn: body.depositedOn ?? new Date().toISOString().slice(0, 10),
-      depositedBy: user.id,
-      depositedByName: user.name,
+      deposited_on: body.depositedOn ?? new Date().toISOString().slice(0, 10),
+      deposited_by: user.id,
+      deposited_by_name: user.name,
       notes: body.notes ?? null,
-      createdAt: new Date().toISOString(),
-    }, 201);
+      created_at: new Date().toISOString(),
+    };
+    DEMO_DEPOSITS_LIVE.unshift(deposit);
+    return ok(toDemoDeposit(deposit), 201);
   }
 
   // ── Product transfer (demo: in-memory) ──
@@ -976,7 +1029,7 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
     DEMO_PURCHASES.unshift(purchase);
     return ok(toPurchaseRow(purchase), 201);
   }
-  const purchaseMatch = path.match(/^\/api\/v1\/purchases\/([^/]+)(\/receive|\/cancel)?$/);
+  const purchaseMatch = path.match(/^\/api\/v1\/purchases\/([^/]+)(\/receive|\/cancel|\/order)?$/);
   if (purchaseMatch && method === 'GET' && !purchaseMatch[2]) {
     const denied = mgrOnly();
     if (denied) return denied;
@@ -1040,11 +1093,26 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
     }
     return ok({ id: p.id, received: true, paymentDeducted: deducted, paymentMethod: p.paymentMethod, paymentAmount: total });
   }
+  if (purchaseMatch && purchaseMatch[2] === '/order' && method === 'POST') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const p = DEMO_PURCHASES.find((x) => x.id === purchaseMatch[1]);
+    if (!p) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That purchase order no longer exists.' } }, { status: 404 });
+    if (p.status !== 'draft') {
+      return NextResponse.json({ error: { code: 'NOT_ORDERABLE', message: 'Only draft purchase orders can be marked as ordered.' } }, { status: 409 });
+    }
+    p.status = 'ordered';
+    p.orderedAt = new Date().toISOString();
+    return ok({ id: p.id, ordered: true });
+  }
   if (purchaseMatch && purchaseMatch[2] === '/cancel' && method === 'POST') {
     const denied = mgrOnly();
     if (denied) return denied;
     const p = DEMO_PURCHASES.find((x) => x.id === purchaseMatch[1]);
     if (!p) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That purchase order no longer exists.' } }, { status: 404 });
+    if (p.status !== 'draft' && p.status !== 'ordered') {
+      return NextResponse.json({ error: { code: 'NOT_CANCELLABLE', message: 'Only draft or ordered purchase orders can be cancelled.' } }, { status: 409 });
+    }
     p.status = 'cancelled';
     p.cancelledAt = new Date().toISOString();
     return ok({ id: p.id, cancelled: true });

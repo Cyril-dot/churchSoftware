@@ -57,6 +57,58 @@ export const DEMO_DEPOSIT_ACCOUNTS = [
   { id: 'da2', name: 'Bookshop Bank Account', bank_name: 'Absa Ghana', account_number: '0987654321' },
 ];
 
+export interface DemoDeposit {
+  id: string;
+  reference_number: string;
+  deposit_account_id: string;
+  amount: number;
+  deposited_on: string;
+  deposited_by: string;
+  deposited_by_name: string;
+  notes: string | null;
+  created_at: string;
+}
+
+/* Seeded once with fixed amounts/dates — account totals, counts and the
+   deposits timeline are all computed from this single dataset. */
+export const DEMO_DEPOSITS: DemoDeposit[] = [
+  {
+    id: 'dep-1', reference_number: 'D-000001', deposit_account_id: 'da1',
+    amount: 600, deposited_on: daysAgoISO(12),
+    deposited_by: 'demo-manager', deposited_by_name: 'Kwame Mensah',
+    notes: 'Sunday and midweek collections.',
+    created_at: new Date(Date.now() - 12 * 86400_000).toISOString(),
+  },
+  {
+    id: 'dep-2', reference_number: 'D-000002', deposit_account_id: 'da2',
+    amount: 780, deposited_on: daysAgoISO(9),
+    deposited_by: 'demo-admin', deposited_by_name: 'Ama Serwaa',
+    notes: null,
+    created_at: new Date(Date.now() - 9 * 86400_000).toISOString(),
+  },
+  {
+    id: 'dep-3', reference_number: 'D-000003', deposit_account_id: 'da1',
+    amount: 450, deposited_on: daysAgoISO(7),
+    deposited_by: 'demo-admin', deposited_by_name: 'Ama Serwaa',
+    notes: null,
+    created_at: new Date(Date.now() - 7 * 86400_000).toISOString(),
+  },
+  {
+    id: 'dep-4', reference_number: 'D-000004', deposit_account_id: 'da2',
+    amount: 415.25, deposited_on: daysAgoISO(3),
+    deposited_by: 'demo-manager', deposited_by_name: 'Kwame Mensah',
+    notes: 'Book fair takings.',
+    created_at: new Date(Date.now() - 3 * 86400_000).toISOString(),
+  },
+  {
+    id: 'dep-5', reference_number: 'D-000005', deposit_account_id: 'da1',
+    amount: 320.5, deposited_on: daysAgoISO(2),
+    deposited_by: 'demo-manager', deposited_by_name: 'Kwame Mensah',
+    notes: null,
+    created_at: new Date(Date.now() - 2 * 86400_000).toISOString(),
+  },
+];
+
 export const DEMO_PRODUCTS: DemoProduct[] = [
   { id: 'p1', name: 'KJV Study Bible (Large Print)', author_or_brand: 'Thomas Nelson', sku: 'BIB-001', barcode: '9780718075824', cover_photo_url: null, product_type: 'bibles', category: 'Bibles', cost_price: 85, selling_price: 120, quantity_on_hand: 34, quantity_shop: 24, quantity_warehouse: 10, reorder_level: 5, active: true },
   { id: 'p2', name: 'NIV Thinline Bible', author_or_brand: 'Zondervan', sku: 'BIB-002', barcode: '9780310422353', cover_photo_url: null, product_type: 'bibles', category: 'Bibles', cost_price: 65, selling_price: 95, quantity_on_hand: 23, quantity_shop: 18, quantity_warehouse: 5, reorder_level: 5, active: true },
