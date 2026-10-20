@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getSql } from '@/lib/db';
 import { handle, ok, requireUser, HttpError } from '@/lib/auth';
 import { money, num, parsePagination, pageEnvelope, cursorCondition, type CursorRow } from '@/lib/api-utils';
+import { LOW_STOCK_SQL } from '@/lib/low-stock';
 
 const MANAGER_COLS = `
   p.id, p.name, p.author_or_brand, p.sku, p.barcode, p.cover_photo_url, p.reference,
@@ -84,7 +85,7 @@ export const GET = handle(async (req) => {
     params.push(categoryId);
     conditions.push(`p.category_id = $${params.length}`);
   }
-  if (lowStock) conditions.push('p.quantity_on_hand <= p.reorder_level');
+  if (lowStock) conditions.push(LOW_STOCK_SQL);
   cursorCondition(conditions, params, cursorTs, cursorId);
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

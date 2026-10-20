@@ -8,7 +8,7 @@ export const GET = handle(async (req, ctx) => {
   const sql = getSql();
 
   const rows = (await sql`
-    SELECT p.id, p.reference_number, p.invoice_number, p.supplier_id, s.name AS supplier_name,
+    SELECT p.id, p.reference_number, p.invoice_number, p.payment_method, p.supplier_id, s.name AS supplier_name,
            p.status, p.ordered_at, p.received_at, p.cancelled_at, p.notes,
            p.created_by, u.name AS created_by_name, p.created_at
     FROM purchases p
@@ -37,6 +37,7 @@ export const GET = handle(async (req, ctx) => {
     id: purchase.id as string,
     referenceNumber: purchase.reference_number as string,
     invoiceNumber: purchase.invoice_number as string | null,
+    paymentMethod: (purchase.payment_method as string) ?? 'cash',
     supplierId: purchase.supplier_id as string,
     supplierName: purchase.supplier_name as string | null,
     status: purchase.status as string,

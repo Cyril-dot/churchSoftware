@@ -9,6 +9,7 @@ function toPurchase(row: Record<string, unknown>) {
     id: row.id as string,
     referenceNumber: row.reference_number as string,
     invoiceNumber: row.invoice_number as string | null,
+    paymentMethod: (row.payment_method as string) ?? 'cash',
     supplierId: row.supplier_id as string,
     supplierName: row.supplier_name as string | null,
     status: row.status as string,
@@ -50,7 +51,7 @@ export const GET = handle(async (req) => {
   params.push(limit + 1);
 
   const rows = (await sql.query(
-    `SELECT p.id, p.reference_number, p.invoice_number, p.supplier_id, s.name AS supplier_name,
+    `SELECT p.id, p.reference_number, p.invoice_number, p.payment_method, p.supplier_id, s.name AS supplier_name,
             p.status, p.ordered_at, p.received_at, p.cancelled_at, p.notes,
             p.created_by, u.name AS created_by_name, p.created_at,
             COUNT(pi.id)::int AS item_count,
@@ -75,6 +76,7 @@ const createPurchaseSchema = z.object({
   referenceNumber: z.string().trim().max(100).nullish(),
   notes: z.string().trim().max(2000).nullish(),
   invoiceNumber: z.string().trim().max(100).nullish(),
+  paymentMethod: z.enum(['cash', 'momo']).default('cash'),
   items: z
     .array(
       z.object({
@@ -112,8 +114,8 @@ export const POST = handle(async (req) => {
   /* Non-interactive transaction: purchase header + all lines atomically. */
   await sql.transaction([
     sql`
-      INSERT INTO purchases (id, reference_number, invoice_number, supplier_id, status, notes, created_by)
-      VALUES (${id}, ${referenceNumber}, ${body.invoiceNumber ?? null}, ${body.supplierId}, 'draft', ${body.notes ?? null}, ${user.id})
+      INSERT INTO purchases (id, reference_number, invoice_number, payment_method, supplier_id, status, notes, created_by)
+      VALUES (${id}, ${referenceNumber}, ${body.invoiceNumber ?? null}, ${body.paymentMethod}, ${body.supplierId}, 'draft', ${body.notes ?? null}, ${user.id})
     `,
     ...body.items.map(
       (item: { productId: string; quantityOrdered: number; unitCost: number }) => sql`
@@ -124,7 +126,7 @@ export const POST = handle(async (req) => {
   ]);
 
   const rows = (await sql`
-    SELECT p.id, p.reference_number, p.invoice_number, p.supplier_id, s.name AS supplier_name,
+    SELECT p.id, p.reference_number, p.invoice_number, p.payment_method, p.supplier_id, s.name AS supplier_name,
            p.status, p.ordered_at, p.received_at, p.cancelled_at, p.notes,
            p.created_by, u.name AS created_by_name, p.created_at,
            COUNT(pi.id)::int AS item_count,
