@@ -2,7 +2,13 @@
 // This lets anyone preview and test the full app without a Neon database.
 
 import { NextRequest, NextResponse } from 'next/server';
-import { DEMO_USERS, DEMO_PRODUCTS, DEMO_SALES, DEMO_SETTINGS, DEMO_CATEGORIES, DEMO_SUPPLIERS, DEMO_DEPOSIT_ACCOUNTS } from './demo-data';
+import {
+  DEMO_USERS, DEMO_PRODUCTS, DEMO_SALES, DEMO_SETTINGS, DEMO_CATEGORIES, DEMO_SUPPLIERS,
+  DEMO_DEPOSIT_ACCOUNTS, DEMO_DELIVERY_ORDERS, DEMO_CREDIT_SALES, DEMO_TODOS,
+  type DemoDeliveryOrder, type DemoCreditSale, type DemoTodo,
+} from './demo-data';
+import { lowStockReason } from './low-stock';
+import { creditStatus } from './credit';
 
 const DEMO_MOMO = {
   balance: 1240.5,
@@ -17,6 +23,120 @@ const DEMO_CASHOUTS: Array<{
   id: string; referenceNumber: string; amount: number; cashedAt: string;
   cashedBy: string; cashedByName: string; notes: string | null; createdAt: string;
 }> = [];
+
+/* ── New-feature demo stores (seeded copies; mutated in-memory) ── */
+
+const DEMO_DELIVERIES: DemoDeliveryOrder[] = DEMO_DELIVERY_ORDERS.map((o) => ({
+  ...o,
+  items: o.items.map((i) => ({ ...i })),
+}));
+let demoDeliverySeq = DEMO_DELIVERIES.length;
+
+interface DemoCreditLive extends DemoCreditSale {
+  total: number;
+}
+
+const DEMO_CREDIT: DemoCreditLive[] = DEMO_CREDIT_SALES.map((c) => ({
+  ...c,
+  total: c.items.reduce((s, i) => s + i.quantity * i.unit_price, 0),
+  items: c.items.map((i) => ({ ...i })),
+  payments: c.payments.map((p) => ({ ...p })),
+}));
+let demoCreditSeq = DEMO_CREDIT.length;
+
+const DEMO_TODOS_LIVE: DemoTodo[] = DEMO_TODOS.map((t) => ({ ...t }));
+
+interface DemoMovement {
+  id: string; productId: string; productName: string; sku: string | null;
+  movementType: string; quantityChange: number; unitCost: number | null;
+  referenceType: string | null; notes: string | null;
+  createdByName: string | null; createdAt: string;
+}
+
+const DEMO_MOVEMENTS: DemoMovement[] = DEMO_SALES.flatMap((s) =>
+  s.items.map((i, idx) => {
+    const p = DEMO_PRODUCTS.find((x) => x.name === i.name);
+    return {
+      id: `mov-${s.id}-${idx}`,
+      productId: p?.id ?? '',
+      productName: i.name,
+      sku: p?.sku ?? null,
+      movementType: 'sale',
+      quantityChange: -i.quantity,
+      unitCost: p?.cost_price ?? null,
+      referenceType: 'sale',
+      notes: null,
+      createdByName: s.cashier_name,
+      createdAt: s.sold_at,
+    };
+  })
+).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+function pushMovement(m: Omit<DemoMovement, 'id' | 'createdAt'> & { createdAt?: string }) {
+  DEMO_MOVEMENTS.unshift({
+    ...m,
+    id: `mov-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+    createdAt: m.createdAt ?? new Date().toISOString(),
+  });
+}
+
+interface DemoPurchase {
+  id: string; referenceNumber: string; invoiceNumber: string | null;
+  paymentMethod: 'cash' | 'momo';
+  supplierId: string; supplierName: string | null;
+  status: 'draft' | 'ordered' | 'received' | 'cancelled';
+  orderedAt: string | null; receivedAt: string | null; cancelledAt: string | null;
+  notes: string | null; createdBy: string; createdByName: string | null;
+  createdAt: string; paymentDeductedAt: string | null;
+  items: Array<{
+    id: string; productId: string; productName: string; sku: string | null;
+    quantityOrdered: number; quantityReceived: number; unitCost: number;
+  }>;
+}
+
+const DEMO_PURCHASES: DemoPurchase[] = [
+  {
+    id: 'po-1',
+    referenceNumber: 'PO-DEMO-001',
+    invoiceNumber: 'INV-SUP-1001',
+    paymentMethod: 'momo',
+    supplierId: 'sup-8',
+    supplierName: 'Ghana Bible Society',
+    status: 'received',
+    orderedAt: new Date(Date.now() - 6 * 86400_000).toISOString(),
+    receivedAt: new Date(Date.now() - 5 * 86400_000).toISOString(),
+    cancelledAt: null,
+    notes: 'Bibles restock.',
+    createdBy: 'demo-manager',
+    createdByName: 'Kwame Mensah',
+    createdAt: new Date(Date.now() - 6 * 86400_000).toISOString(),
+    paymentDeductedAt: new Date(Date.now() - 5 * 86400_000).toISOString(),
+    items: [
+      { id: 'poi-1', productId: 'p1', productName: 'KJV Study Bible (Large Print)', sku: 'BIB-001', quantityOrdered: 10, quantityReceived: 10, unitCost: 85 },
+    ],
+  },
+  {
+    id: 'po-2',
+    referenceNumber: 'PO-DEMO-002',
+    invoiceNumber: null,
+    paymentMethod: 'cash',
+    supplierId: 'sup-6',
+    supplierName: 'AG Bookshop Head Office',
+    status: 'draft',
+    orderedAt: null,
+    receivedAt: null,
+    cancelledAt: null,
+    notes: null,
+    createdBy: 'demo-admin',
+    createdByName: 'Ama Serwaa',
+    createdAt: new Date(Date.now() - 1 * 86400_000).toISOString(),
+    paymentDeductedAt: null,
+    items: [
+      { id: 'poi-2', productId: 'p7', productName: 'The Purpose Driven Life', sku: 'CL-001', quantityOrdered: 40, quantityReceived: 0, unitCost: 20 },
+      { id: 'poi-3', productId: 'p11', productName: 'Hymnal — Songs of Praise', sku: 'MUS-001', quantityOrdered: 25, quantityReceived: 0, unitCost: 15 },
+    ],
+  },
+];
 
 const DEMO_COOKIE = 'bookshop_demo_session';
 
@@ -80,7 +200,18 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
     const lowStock = req.nextUrl.searchParams.get('lowStock') === '1';
     let items = DEMO_PRODUCTS.filter((p) => p.active);
     if (search) items = items.filter((p) => p.name.toLowerCase().includes(search));
-    if (lowStock) items = items.filter((p) => p.quantity_on_hand <= p.reorder_level);
+    if (lowStock)
+      items = items.filter(
+        (p) =>
+          lowStockReason({
+            productType: p.product_type,
+            categoryName: p.category,
+            quantityShop: p.quantity_shop,
+            quantityWarehouse: p.quantity_warehouse,
+            quantityOnHand: p.quantity_on_hand,
+            reorderLevel: p.reorder_level,
+          }) != null
+      );
     // Return camelCase to match the real API contract
     const toCamel = (p: (typeof DEMO_PRODUCTS)[number]) => ({
       id: p.id,
@@ -129,6 +260,14 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
   if (path === '/api/v1/sales' && method === 'GET') {
     let sales = DEMO_SALES;
     if (user.role === 'cashier') sales = sales.filter((s) => s.sold_by === user.id);
+    const fromParam = req.nextUrl.searchParams.get('from');
+    const toParam = req.nextUrl.searchParams.get('to');
+    if (fromParam) sales = sales.filter((s) => s.sold_at >= fromParam);
+    if (toParam) sales = sales.filter((s) => s.sold_at <= toParam);
+    const methodParam = req.nextUrl.searchParams.get('paymentMethod');
+    if (methodParam) sales = sales.filter((s) => s.payment_method === methodParam);
+    const statusParam = req.nextUrl.searchParams.get('status');
+    if (statusParam) sales = sales.filter((s) => s.status === statusParam);
     // Return camelCase to match the real API contract
     const mapped = sales.slice(0, 50).map((s) => ({
       id: s.id,
@@ -430,6 +569,572 @@ export async function demoDispatch(req: NextRequest): Promise<NextResponse> {
     };
     DEMO_CASHOUTS.push(cashout);
     return ok({ cashout }, 201);
+  }
+
+  // ── Delivery orders (demo: in-memory) ──
+  const mgrOnly = () =>
+    user.role === 'cashier'
+      ? NextResponse.json({ error: { code: 'FORBIDDEN', message: 'Not allowed.' } }, { status: 403 })
+      : null;
+
+  const toDelivery = (o: DemoDeliveryOrder) => ({
+    id: o.id,
+    invoiceNumber: o.invoice_number,
+    customerName: o.customer_name,
+    contactName: o.contact_name,
+    phone: o.phone,
+    address: o.address,
+    status: o.status,
+    total: o.items.reduce((s, i) => s + i.quantity * i.unit_price, 0),
+    notes: o.notes,
+    itemCount: o.items.length,
+    createdBy: o.created_by,
+    createdByName: o.created_by_name,
+    createdAt: o.created_at,
+    deliveredAt: o.delivered_at,
+    deliveredByName: o.delivered_by_name,
+  });
+
+  if (path === '/api/v1/deliveries' && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    let items = DEMO_DELIVERIES.slice();
+    const fromParam = req.nextUrl.searchParams.get('from');
+    const toParam = req.nextUrl.searchParams.get('to');
+    const statusParam = req.nextUrl.searchParams.get('status');
+    if (fromParam) items = items.filter((o) => o.created_at >= fromParam);
+    if (toParam) items = items.filter((o) => o.created_at <= toParam);
+    if (statusParam) items = items.filter((o) => o.status === statusParam);
+    items.sort((a, b) => b.created_at.localeCompare(a.created_at));
+    return ok({ items: items.map(toDelivery), nextCursor: null });
+  }
+  if (path === '/api/v1/deliveries' && method === 'POST') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const body = await req.json().catch(() => ({}));
+    const lines: Array<{ productId: string; quantity: number; unitPrice: number }> = body.items || [];
+    if (!body.customerName || lines.length === 0) {
+      return NextResponse.json({ error: { code: 'VALIDATION', message: 'Customer name and at least one item are required.' } }, { status: 400 });
+    }
+    for (const l of lines) {
+      const p = DEMO_PRODUCTS.find((x) => x.id === l.productId);
+      if (!p) return NextResponse.json({ error: { code: 'INVALID_PRODUCT', message: 'One or more products do not exist.' } }, { status: 400 });
+      if (p.quantity_warehouse < l.quantity) {
+        return NextResponse.json({ error: { code: 'INSUFFICIENT_STOCK', message: `Only ${p.quantity_warehouse} of “${p.name}” in the warehouse.` } }, { status: 400 });
+      }
+    }
+    demoDeliverySeq++;
+    const order: DemoDeliveryOrder = {
+      id: `del-${Date.now()}`,
+      invoice_number: `INV-${String(demoDeliverySeq).padStart(6, '0')}`,
+      customer_name: body.customerName,
+      contact_name: body.contactName ?? null,
+      phone: body.phone ?? null,
+      address: body.address ?? null,
+      status: 'pending',
+      notes: body.notes ?? null,
+      created_by: user.id,
+      created_by_name: user.name,
+      created_at: new Date().toISOString(),
+      delivered_at: null,
+      delivered_by_name: null,
+      items: lines.map((l) => {
+        const p = DEMO_PRODUCTS.find((x) => x.id === l.productId)!;
+        p.quantity_warehouse -= l.quantity;
+        p.quantity_on_hand -= l.quantity;
+        pushMovement({
+          productId: p.id, productName: p.name, sku: p.sku, movementType: 'delivery',
+          quantityChange: -l.quantity, unitCost: p.cost_price, referenceType: 'delivery_order',
+          notes: `Warehouse delivery INV-${String(demoDeliverySeq).padStart(6, '0')}`,
+          createdByName: user.name,
+        });
+        return { product_id: p.id, name: p.name, quantity: l.quantity, unit_price: l.unitPrice };
+      }),
+    };
+    DEMO_DELIVERIES.unshift(order);
+    return ok(toDelivery(order), 201);
+  }
+  const deliveryMatch = path.match(/^\/api\/v1\/deliveries\/([^/]+)(\/deliver)?$/);
+  if (deliveryMatch && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const o = DEMO_DELIVERIES.find((x) => x.id === deliveryMatch[1]);
+    if (!o) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That delivery order no longer exists.' } }, { status: 404 });
+    return ok({
+      ...toDelivery(o),
+      items: o.items.map((i, idx) => ({
+        id: `${o.id}-i${idx}`,
+        productId: i.product_id,
+        productName: i.name,
+        sku: DEMO_PRODUCTS.find((p) => p.id === i.product_id)?.sku ?? null,
+        quantity: i.quantity,
+        unitPrice: i.unit_price,
+        lineTotal: i.quantity * i.unit_price,
+      })),
+      settings: {
+        shopName: DEMO_SETTINGS.shop_name,
+        currencyCode: DEMO_SETTINGS.currency_code,
+        currencySymbol: DEMO_SETTINGS.currency_symbol,
+        receiptFooter: DEMO_SETTINGS.receipt_footer,
+        timezone: DEMO_SETTINGS.timezone,
+      },
+    });
+  }
+  if (deliveryMatch && deliveryMatch[2] && method === 'POST') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const o = DEMO_DELIVERIES.find((x) => x.id === deliveryMatch[1]);
+    if (!o) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That delivery order no longer exists.' } }, { status: 404 });
+    if (o.status === 'delivered') {
+      return NextResponse.json({ error: { code: 'ALREADY_DELIVERED', message: 'This order has already been marked delivered.' } }, { status: 409 });
+    }
+    o.status = 'delivered';
+    o.delivered_at = new Date().toISOString();
+    o.delivered_by_name = user.name;
+    return ok({ id: o.id, delivered: true });
+  }
+
+  // ── Credit customers (demo: in-memory) ──
+  const creditPaid = (c: DemoCreditLive) => c.payments.reduce((s, p) => s + p.amount, 0);
+  const toCredit = (c: DemoCreditLive) => {
+    const paid = creditPaid(c);
+    const st = creditStatus(c.total, paid, c.due_date);
+    return {
+      id: c.id,
+      referenceNumber: c.reference_number,
+      churchName: c.church_name,
+      contactName: c.contact_name,
+      phone: c.phone,
+      location: c.location,
+      takenOn: c.taken_on,
+      dueDate: c.due_date,
+      total: c.total,
+      paid,
+      balance: st.balance,
+      status: st.status,
+      overdue: st.overdue,
+      notes: c.notes,
+      itemCount: c.items.length,
+      createdBy: c.created_by,
+      createdByName: c.created_by_name,
+      createdAt: c.created_at,
+    };
+  };
+
+  if (path === '/api/v1/credit' && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    let items = DEMO_CREDIT.map(toCredit);
+    const statusParam = req.nextUrl.searchParams.get('status');
+    if (statusParam === 'overdue') items = items.filter((i) => i.overdue);
+    else if (statusParam) items = items.filter((i) => i.status === statusParam);
+    const outstanding = items.filter((i) => i.balance > 0);
+    return ok({
+      items,
+      summary: {
+        outstandingCount: outstanding.length,
+        outstandingTotal: Math.round(outstanding.reduce((s, i) => s + i.balance, 0) * 100) / 100,
+        overdueCount: items.filter((i) => i.overdue).length,
+      },
+      nextCursor: null,
+    });
+  }
+  if (path === '/api/v1/credit' && method === 'POST') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const body = await req.json().catch(() => ({}));
+    const lines: Array<{ productId: string; quantity: number; unitPrice: number }> = body.items || [];
+    if (!body.churchName || !body.contactName || lines.length === 0) {
+      return NextResponse.json({ error: { code: 'VALIDATION', message: 'Church, contact name and at least one item are required.' } }, { status: 400 });
+    }
+    for (const l of lines) {
+      const p = DEMO_PRODUCTS.find((x) => x.id === l.productId);
+      if (!p) return NextResponse.json({ error: { code: 'INVALID_PRODUCT', message: 'One or more products do not exist.' } }, { status: 400 });
+      if (p.quantity_shop < l.quantity) {
+        return NextResponse.json({ error: { code: 'INSUFFICIENT_STOCK', message: `Only ${p.quantity_shop} of “${p.name}” in the shop.` } }, { status: 400 });
+      }
+    }
+    demoCreditSeq++;
+    const ref = `CR-${String(demoCreditSeq).padStart(6, '0')}`;
+    const sale: DemoCreditLive = {
+      id: `cred-${Date.now()}`,
+      reference_number: ref,
+      church_name: body.churchName,
+      contact_name: body.contactName,
+      phone: body.phone ?? null,
+      location: body.location ?? null,
+      taken_on: body.takenOn ?? new Date().toISOString().slice(0, 10),
+      due_date: body.dueDate ?? null,
+      notes: body.notes ?? null,
+      created_by: user.id,
+      created_by_name: user.name,
+      created_at: new Date().toISOString(),
+      total: lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0),
+      items: lines.map((l) => {
+        const p = DEMO_PRODUCTS.find((x) => x.id === l.productId)!;
+        p.quantity_shop -= l.quantity;
+        p.quantity_on_hand -= l.quantity;
+        pushMovement({
+          productId: p.id, productName: p.name, sku: p.sku, movementType: 'credit_sale',
+          quantityChange: -l.quantity, unitCost: p.cost_price, referenceType: 'credit_sale',
+          notes: `Credit sale ${ref} — ${body.churchName}`, createdByName: user.name,
+        });
+        return { product_id: p.id, name: p.name, quantity: l.quantity, unit_price: l.unitPrice };
+      }),
+      payments: [],
+    };
+    DEMO_CREDIT.unshift(sale);
+    return ok(toCredit(sale), 201);
+  }
+  const creditPayMatch = path.match(/^\/api\/v1\/credit\/([^/]+)\/payments$/);
+  if (creditPayMatch && method === 'POST') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const c = DEMO_CREDIT.find((x) => x.id === creditPayMatch[1]);
+    if (!c) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That credit record no longer exists.' } }, { status: 404 });
+    const body = await req.json().catch(() => ({}));
+    const amount = Number(body.amount) || 0;
+    const paid = creditPaid(c);
+    const { balance } = creditStatus(c.total, paid, null);
+    if (balance <= 0) {
+      return NextResponse.json({ error: { code: 'ALREADY_SETTLED', message: 'This credit is already fully settled.' } }, { status: 409 });
+    }
+    if (amount <= 0 || amount > balance) {
+      return NextResponse.json({ error: { code: 'OVERPAYMENT', message: `Payment exceeds the outstanding balance of ${balance.toFixed(2)}.` } }, { status: 400 });
+    }
+    const payment = {
+      id: `cpay-${Date.now()}`,
+      amount,
+      paid_on: body.paidOn ?? new Date().toISOString().slice(0, 10),
+      payment_method: body.paymentMethod ?? null,
+      notes: body.notes ?? null,
+      received_by_name: user.name,
+    };
+    c.payments.push(payment);
+    const newPaid = Math.round((paid + amount) * 100) / 100;
+    const st = creditStatus(c.total, newPaid, c.due_date);
+    return ok({ id: payment.id, amount, paidOn: payment.paid_on, paid: newPaid, balance: st.balance, status: st.status, overdue: st.overdue }, 201);
+  }
+  const creditMatch = path.match(/^\/api\/v1\/credit\/([^/]+)$/);
+  if (creditMatch && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const c = DEMO_CREDIT.find((x) => x.id === creditMatch[1]);
+    if (!c) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That credit record no longer exists.' } }, { status: 404 });
+    return ok({
+      ...toCredit(c),
+      items: c.items.map((i, idx) => ({
+        id: `${c.id}-i${idx}`,
+        productId: i.product_id,
+        productName: i.name,
+        sku: DEMO_PRODUCTS.find((p) => p.id === i.product_id)?.sku ?? null,
+        quantity: i.quantity,
+        unitPrice: i.unit_price,
+        lineTotal: i.quantity * i.unit_price,
+      })),
+      payments: c.payments.map((p) => ({
+        id: p.id,
+        amount: p.amount,
+        paidOn: p.paid_on,
+        paymentMethod: p.payment_method,
+        notes: p.notes,
+        receivedBy: c.created_by,
+        receivedByName: p.received_by_name,
+        createdAt: c.created_at,
+      })),
+    });
+  }
+
+  // ── To-dos (demo: in-memory, shared list) ──
+  const toTodo = (t: DemoTodo) => ({
+    id: t.id,
+    title: t.title,
+    notes: t.notes,
+    dueDate: t.due_date,
+    completed: t.completed,
+    completedAt: t.completed_at,
+    createdBy: t.created_by,
+    createdByName: t.created_by_name,
+    createdAt: t.created_at,
+  });
+  if (path === '/api/v1/todos' && method === 'GET') {
+    const items = DEMO_TODOS_LIVE.slice().sort((a, b) => {
+      if (a.completed !== b.completed) return a.completed ? 1 : -1;
+      return b.created_at.localeCompare(a.created_at);
+    });
+    return ok({ items: items.map(toTodo), nextCursor: null });
+  }
+  if (path === '/api/v1/todos' && method === 'POST') {
+    const body = await req.json().catch(() => ({}));
+    if (!body.title?.trim()) {
+      return NextResponse.json({ error: { code: 'VALIDATION', message: 'A title is required.' } }, { status: 400 });
+    }
+    const todo: DemoTodo = {
+      id: `todo-${Date.now()}`,
+      title: body.title.trim(),
+      notes: body.notes ?? null,
+      due_date: body.dueDate ?? null,
+      completed: false,
+      completed_at: null,
+      created_by: user.id,
+      created_by_name: user.name,
+      created_at: new Date().toISOString(),
+    };
+    DEMO_TODOS_LIVE.unshift(todo);
+    return ok(toTodo(todo), 201);
+  }
+  const todoMatch = path.match(/^\/api\/v1\/todos\/([^/]+)$/);
+  if (todoMatch && method === 'PATCH') {
+    const t = DEMO_TODOS_LIVE.find((x) => x.id === todoMatch[1]);
+    if (!t) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That task no longer exists.' } }, { status: 404 });
+    const body = await req.json().catch(() => ({}));
+    if (body.title !== undefined) t.title = body.title;
+    if (body.notes !== undefined) t.notes = body.notes;
+    if (body.dueDate !== undefined) t.due_date = body.dueDate;
+    if (body.completed !== undefined) {
+      t.completed = !!body.completed;
+      t.completed_at = t.completed ? new Date().toISOString() : null;
+    }
+    return ok(toTodo(t));
+  }
+  if (todoMatch && method === 'DELETE') {
+    const idx = DEMO_TODOS_LIVE.findIndex((x) => x.id === todoMatch[1]);
+    if (idx < 0) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That task no longer exists.' } }, { status: 404 });
+    DEMO_TODOS_LIVE.splice(idx, 1);
+    return ok({ id: todoMatch[1], deleted: true });
+  }
+
+  // ── Purchases (demo: in-memory) ──
+  const purchaseTotal = (p: DemoPurchase) =>
+    p.items.reduce((s, i) => s + i.quantityOrdered * i.unitCost, 0);
+  const toPurchaseRow = (p: DemoPurchase) => ({
+    id: p.id,
+    referenceNumber: p.referenceNumber,
+    invoiceNumber: p.invoiceNumber,
+    paymentMethod: p.paymentMethod,
+    supplierId: p.supplierId,
+    supplierName: p.supplierName,
+    status: p.status,
+    orderedAt: p.orderedAt,
+    receivedAt: p.receivedAt,
+    cancelledAt: p.cancelledAt,
+    notes: p.notes,
+    createdBy: p.createdBy,
+    createdByName: p.createdByName,
+    itemCount: p.items.length,
+    totalCost: purchaseTotal(p),
+    createdAt: p.createdAt,
+  });
+
+  if (path === '/api/v1/purchases' && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    let items = DEMO_PURCHASES.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const statusParam = req.nextUrl.searchParams.get('status');
+    if (statusParam) items = items.filter((p) => p.status === statusParam);
+    return ok({ items: items.map(toPurchaseRow), nextCursor: null });
+  }
+  if (path === '/api/v1/purchases' && method === 'POST') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const body = await req.json().catch(() => ({}));
+    const supIdx = parseInt(String(body.supplierId ?? '').replace('sup-', ''), 10);
+    const supplierName = DEMO_SUPPLIERS[supIdx] ?? null;
+    const lines: Array<{ productId: string; quantityOrdered: number; unitCost: number }> = body.items || [];
+    if (!supplierName || lines.length === 0) {
+      return NextResponse.json({ error: { code: 'VALIDATION', message: 'Supplier and at least one item are required.' } }, { status: 400 });
+    }
+    const purchase: DemoPurchase = {
+      id: `po-${Date.now()}`,
+      referenceNumber: body.referenceNumber || `PO-${Date.now().toString(36).toUpperCase()}`,
+      invoiceNumber: body.invoiceNumber ?? null,
+      paymentMethod: body.paymentMethod === 'momo' ? 'momo' : 'cash',
+      supplierId: body.supplierId,
+      supplierName,
+      status: 'draft',
+      orderedAt: null,
+      receivedAt: null,
+      cancelledAt: null,
+      notes: body.notes ?? null,
+      createdBy: user.id,
+      createdByName: user.name,
+      createdAt: new Date().toISOString(),
+      paymentDeductedAt: null,
+      items: lines.map((l, i) => {
+        const p = DEMO_PRODUCTS.find((x) => x.id === l.productId);
+        return {
+          id: `poi-${Date.now()}-${i}`,
+          productId: l.productId,
+          productName: p?.name ?? 'Unknown',
+          sku: p?.sku ?? null,
+          quantityOrdered: l.quantityOrdered,
+          quantityReceived: 0,
+          unitCost: l.unitCost,
+        };
+      }),
+    };
+    DEMO_PURCHASES.unshift(purchase);
+    return ok(toPurchaseRow(purchase), 201);
+  }
+  const purchaseMatch = path.match(/^\/api\/v1\/purchases\/([^/]+)(\/receive|\/cancel)?$/);
+  if (purchaseMatch && method === 'GET' && !purchaseMatch[2]) {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const p = DEMO_PURCHASES.find((x) => x.id === purchaseMatch[1]);
+    if (!p) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That purchase order no longer exists.' } }, { status: 404 });
+    return ok({ ...toPurchaseRow(p), items: p.items });
+  }
+  if (purchaseMatch && purchaseMatch[2] === '/receive' && method === 'POST') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const p = DEMO_PURCHASES.find((x) => x.id === purchaseMatch[1]);
+    if (!p) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That purchase order no longer exists.' } }, { status: 404 });
+    if (p.status !== 'draft' && p.status !== 'ordered') {
+      return NextResponse.json({ error: { code: 'PURCHASE_NOT_RECEIVABLE', message: 'This order cannot be received.' } }, { status: 409 });
+    }
+    p.status = 'received';
+    p.receivedAt = new Date().toISOString();
+    for (const it of p.items) {
+      it.quantityReceived = it.quantityOrdered;
+      const prod = DEMO_PRODUCTS.find((x) => x.id === it.productId);
+      if (prod) {
+        prod.quantity_warehouse += it.quantityOrdered;
+        prod.quantity_on_hand += it.quantityOrdered;
+        pushMovement({
+          productId: prod.id, productName: prod.name, sku: prod.sku, movementType: 'purchase_receipt',
+          quantityChange: it.quantityOrdered, unitCost: it.unitCost, referenceType: 'purchase',
+          notes: null, createdByName: user.name,
+        });
+      }
+    }
+    // Auto-deduct the payment (guarded by paymentDeductedAt)
+    let deducted = false;
+    const total = purchaseTotal(p);
+    if (!p.paymentDeductedAt && total > 0) {
+      const label = `Purchase ${p.referenceNumber}${p.invoiceNumber ? ` (Invoice ${p.invoiceNumber})` : ''}`;
+      if (p.paymentMethod === 'momo') {
+        let next = Math.round((DEMO_MOMO.balance - total) * 100) / 100;
+        let notes = `Payment for ${label} — auto-deducted on receive.`;
+        if (next < 0) {
+          notes += ` MoMo balance was only ${DEMO_MOMO.balance.toFixed(2)}; shortfall of ${Math.abs(next).toFixed(2)} not covered.`;
+          next = 0;
+        }
+        DEMO_MOMO.entries.push({
+          id: `momo-${Date.now()}`, entryType: 'withdrawal', amount: total, balanceAfter: next,
+          reference: p.referenceNumber, notes, createdBy: user.id, createdByName: user.name,
+          createdAt: new Date().toISOString(),
+        });
+        DEMO_MOMO.balance = next;
+      } else {
+        DEMO_CASHOUTS.push({
+          id: `co-${Date.now()}`,
+          referenceNumber: `C-${String(DEMO_CASHOUTS.length + 1).padStart(6, '0')}`,
+          amount: total, cashedAt: new Date().toISOString(), cashedBy: user.id,
+          cashedByName: user.name,
+          notes: `Payment for ${label} — auto-deducted on receive.`,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      p.paymentDeductedAt = new Date().toISOString();
+      deducted = true;
+    }
+    return ok({ id: p.id, received: true, paymentDeducted: deducted, paymentMethod: p.paymentMethod, paymentAmount: total });
+  }
+  if (purchaseMatch && purchaseMatch[2] === '/cancel' && method === 'POST') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const p = DEMO_PURCHASES.find((x) => x.id === purchaseMatch[1]);
+    if (!p) return NextResponse.json({ error: { code: 'NOT_FOUND', message: 'That purchase order no longer exists.' } }, { status: 404 });
+    p.status = 'cancelled';
+    p.cancelledAt = new Date().toISOString();
+    return ok({ id: p.id, cancelled: true });
+  }
+
+  // ── Reports: stock / low stock / movements / daily sales (demo) ──
+  const toStockRow = (p: (typeof DEMO_PRODUCTS)[number]) => {
+    const reason = lowStockReason({
+      productType: p.product_type,
+      categoryName: p.category,
+      quantityShop: p.quantity_shop,
+      quantityWarehouse: p.quantity_warehouse,
+      quantityOnHand: p.quantity_on_hand,
+      reorderLevel: p.reorder_level,
+    });
+    return {
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      categoryName: p.category,
+      productType: p.product_type,
+      quantityShop: p.quantity_shop,
+      quantityWarehouse: p.quantity_warehouse,
+      quantityOnHand: p.quantity_on_hand,
+      reorderLevel: p.reorder_level,
+      sellingPrice: p.selling_price,
+      isLow: reason != null,
+      lowReason: reason,
+    };
+  };
+  if (path === '/api/v1/reports/stock' && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    return ok({ items: DEMO_PRODUCTS.filter((p) => p.active).map(toStockRow) });
+  }
+  if (path === '/api/v1/reports/low-stock' && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    return ok({ items: DEMO_PRODUCTS.filter((p) => p.active).map(toStockRow).filter((r) => r.isLow) });
+  }
+  if (path === '/api/v1/reports/movements' && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const now = Date.now();
+    const fromParam = req.nextUrl.searchParams.get('from') || new Date(now - 30 * 86400_000).toISOString();
+    const toParam = req.nextUrl.searchParams.get('to') || new Date(now).toISOString();
+    const typeParam = req.nextUrl.searchParams.get('type');
+    let items = DEMO_MOVEMENTS.filter((m) => m.createdAt >= fromParam && m.createdAt <= toParam);
+    if (typeParam) items = items.filter((m) => m.movementType === typeParam);
+    return ok({ items: items.slice(0, 200), from: fromParam, to: toParam });
+  }
+  if (path === '/api/v1/reports/daily-sales' && method === 'GET') {
+    const denied = mgrOnly();
+    if (denied) return denied;
+    const date = req.nextUrl.searchParams.get('date');
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return NextResponse.json({ error: { code: 'INVALID_DATE', message: 'Pass ?date=YYYY-MM-DD.' } }, { status: 400 });
+    }
+    const daySales = DEMO_SALES.filter((s) => s.status === 'completed' && s.sold_at.slice(0, 10) === date);
+    const grouped = new Map<string, { name: string; quantity: number; unitPrice: number; lineTotal: number; isBishop: boolean }>();
+    for (const s of daySales) {
+      for (const i of s.items) {
+        const prod = DEMO_PRODUCTS.find((p) => p.name === i.name);
+        const isBishop = prod
+          ? prod.product_type === 'bishop_books' || prod.category === 'Bishop Books'
+          : false;
+        const key = `${i.name}|${i.unit_price}`;
+        const cur = grouped.get(key) ?? { name: i.name, quantity: 0, unitPrice: i.unit_price, lineTotal: 0, isBishop };
+        cur.quantity += i.quantity;
+        cur.lineTotal += i.quantity * i.unit_price;
+        grouped.set(key, cur);
+      }
+    }
+    const all = [...grouped.values()];
+    const bishopItems = all.filter((i) => i.isBishop);
+    const otherItems = all.filter((i) => !i.isBishop);
+    const sumItems = (arr: typeof all) => Math.round(arr.reduce((s, i) => s + i.lineTotal, 0) * 100) / 100;
+    const cashTotal = daySales.filter((s) => s.payment_method === 'cash').reduce((s, x) => s + x.total, 0);
+    const momoTotal = daySales.filter((s) => s.payment_method === 'mobile_money').reduce((s, x) => s + x.total, 0);
+    const grandTotal = daySales.reduce((s, x) => s + x.total, 0);
+    return ok({
+      date,
+      shopName: DEMO_SETTINGS.shop_name,
+      bishop: { items: bishopItems.map((i) => ({ productId: '', ...i })), subtotal: sumItems(bishopItems) },
+      other: { items: otherItems.map((i) => ({ productId: '', ...i })), subtotal: sumItems(otherItems) },
+      cashTotal: Math.round(cashTotal * 100) / 100,
+      momoTotal: Math.round(momoTotal * 100) / 100,
+      grandTotal: Math.round(grandTotal * 100) / 100,
+      transactions: daySales.length,
+    });
   }
 
   // Fallback: not implemented in demo
