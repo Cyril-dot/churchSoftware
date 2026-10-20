@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import type { SessionUser } from '@/lib/auth';
 import Icon from '@/components/Icon';
 import { formatMoney } from '@/lib/money';
+import { lowStockReason } from '@/lib/low-stock';
 import {
   api,
   useDebounce,
@@ -221,7 +222,7 @@ function TierStrip({ p }: { p: Product }) {
   const tiers = [
     { label: 'Bishop', value: p.priceBishop },
     { label: 'S.P.', value: p.priceSonsOfProphet },
-    { label: 'Deji', value: p.pricePastorDeji },
+    { label: 'Outreach', value: p.pricePastorDeji },
   ].filter(
     (t): t is { label: string; value: number } =>
       t.value != null && t.value !== p.sellingPrice
@@ -542,7 +543,15 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
     return arr;
   }, [items, sortKey, sortDir]);
 
-  const isLow = (p: Product) => p.quantityOnHand <= p.reorderLevel;
+  const isLow = (p: Product) =>
+    lowStockReason({
+      productType: p.productType,
+      categoryName: p.categoryName,
+      quantityShop: p.quantityShop,
+      quantityWarehouse: p.quantityWarehouse,
+      quantityOnHand: p.quantityOnHand,
+      reorderLevel: p.reorderLevel,
+    }) != null;
 
   /* Low-stock count for the tab badge: exact when the server filter is on,
      page-local otherwise. */
@@ -582,7 +591,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
       [
         ['Bishop price', form.priceBishop],
         ['Sons of the Prophet price', form.priceSonsOfProphet],
-        ['Pastor Deji price', form.pricePastorDeji],
+        ['Outreach price', form.pricePastorDeji],
       ] as const
     ).find(([, raw]) => {
       const t = raw.trim();
@@ -1225,7 +1234,7 @@ export default function InventoryClient({ user }: { user: SessionUser }) {
             <Field label="Sons of the Prophet price" htmlFor="f-p-sop" hint="Blank = standard price.">
               <input id="f-p-sop" className={inputClass} inputMode="decimal" value={form.priceSonsOfProphet} onChange={(e) => set('priceSonsOfProphet')(e.target.value)} placeholder="0.00" />
             </Field>
-            <Field label="Pastor Deji price" htmlFor="f-p-deji" hint="Blank = standard price.">
+            <Field label="Outreach price" htmlFor="f-p-deji" hint="Blank = standard price.">
               <input id="f-p-deji" className={inputClass} inputMode="decimal" value={form.pricePastorDeji} onChange={(e) => set('pricePastorDeji')(e.target.value)} placeholder="0.00" />
             </Field>
           </div>
