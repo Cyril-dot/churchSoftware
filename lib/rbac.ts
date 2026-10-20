@@ -9,6 +9,8 @@ export interface Capability {
   manageInventory: boolean;
   adjustStock: boolean;
   managePurchases: boolean;
+  manageDeliveries: boolean;
+  manageCredit: boolean;
   manageDeposits: boolean;
   viewReports: boolean;
   manageUsers: boolean;
@@ -20,19 +22,22 @@ const CAPABILITIES: Record<Role, Capability> = {
   cashier: {
     sell: true, viewOwnSales: true, viewAllSales: false, viewCost: false,
     voidSale: false, manageInventory: false, adjustStock: false,
-    managePurchases: false, manageDeposits: false, viewReports: false, manageUsers: false,
+    managePurchases: false, manageDeliveries: false, manageCredit: false,
+    manageDeposits: false, viewReports: false, manageUsers: false,
     manageSettings: false, viewAudit: false,
   },
   manager: {
     sell: true, viewOwnSales: true, viewAllSales: true, viewCost: true,
     voidSale: true, manageInventory: true, adjustStock: true,
-    managePurchases: true, manageDeposits: true, viewReports: true, manageUsers: false,
+    managePurchases: true, manageDeliveries: true, manageCredit: true,
+    manageDeposits: true, viewReports: true, manageUsers: false,
     manageSettings: false, viewAudit: false,
   },
   admin: {
     sell: true, viewOwnSales: true, viewAllSales: true, viewCost: true,
     voidSale: true, manageInventory: true, adjustStock: true,
-    managePurchases: true, manageDeposits: true, viewReports: true, manageUsers: true,
+    managePurchases: true, manageDeliveries: true, manageCredit: true,
+    manageDeposits: true, viewReports: true, manageUsers: true,
     manageSettings: true, viewAudit: true,
   },
 };
@@ -52,8 +57,11 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Home', icon: 'home', capability: null },
   { href: '/sell', label: 'Sell', icon: 'point_of_sale', capability: 'sell' },
   { href: '/sales', label: 'Sales', icon: 'receipt_long', capability: 'viewOwnSales' },
+  { href: '/deliveries', label: 'Deliveries', icon: 'local_shipping', capability: 'manageDeliveries' },
+  { href: '/credit', label: 'Credit', icon: 'account_balance_wallet', capability: 'manageCredit' },
   { href: '/inventory', label: 'Items', icon: 'inventory_2', capability: 'manageInventory' },
   { href: '/purchases', label: 'Purchases', icon: 'shopping_bag', capability: 'managePurchases' },
+  { href: '/todos', label: 'To-Do', icon: 'checklist', capability: null },
   { href: '/deposits', label: 'Deposits', icon: 'account_balance', capability: 'manageDeposits' },
   { href: '/reports', label: 'Reports', icon: 'bar_chart', capability: 'viewReports' },
   { href: '/users', label: 'Users', icon: 'group', capability: 'manageUsers' },
