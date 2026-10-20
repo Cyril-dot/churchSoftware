@@ -561,6 +561,21 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
     }
   };
 
+  const doOrder = async () => {
+    if (!detail) return;
+    setActionBusy(true);
+    try {
+      await api(`/api/v1/purchases/${detail.id}/order`, { method: 'POST' });
+      toast.success('Order placed with supplier.');
+      await refreshDetail(detail.id);
+      fetchOrders();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to place the order.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const doCancel = async () => {
     if (!detail) return;
     setActionBusy(true);
@@ -952,6 +967,21 @@ export default function PurchasesClient({ user }: { user: SessionUser }) {
               {detail.receivedAt && ` · Received ${fmtDate(detail.receivedAt)}`}
               {detail.cancelledAt && ` · Cancelled ${fmtDate(detail.cancelledAt)}`}
             </p>
+
+            {detail.status === 'draft' && (
+              <div className="flex flex-col gap-2">
+                <PrimaryButton
+                  onClick={doOrder}
+                  disabled={actionBusy}
+                  className="min-h-[52px] text-base"
+                >
+                  <Icon name="send" size={22} /> Mark as ordered
+                </PrimaryButton>
+                <SecondaryButton onClick={() => setCancelConfirm(true)}>
+                  <Icon name="cancel" size={20} /> Cancel order
+                </SecondaryButton>
+              </div>
+            )}
 
             {detail.status === 'ordered' && (
               <div className="flex flex-col gap-2">
