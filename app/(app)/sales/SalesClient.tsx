@@ -14,6 +14,7 @@ import {
   listVariants,
   riseVariants,
   PageHeader,
+  PrimaryButton,
   SecondaryButton,
   DangerButton,
   Badge,
@@ -43,6 +44,34 @@ interface SaleRow {
   soldByName: string;
   soldAt: string;
   itemCount: number;
+}
+
+interface DeliveryLite {
+  id: string;
+  invoiceNumber: string;
+  customerName: string;
+  status: string;
+  total: number;
+  itemCount: number;
+  createdAt: string;
+}
+
+interface DailySalesItem {
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+interface DailySales {
+  date: string;
+  shopName: string;
+  bishop: { items: DailySalesItem[]; subtotal: number };
+  other: { items: DailySalesItem[]; subtotal: number };
+  cashTotal: number;
+  momoTotal: number;
+  grandTotal: number;
+  transactions: number;
 }
 
 interface ReceiptItem {
@@ -105,7 +134,7 @@ const METHOD_LABELS: Record<string, string> = {
 const TIER_LABELS: Record<string, string> = {
   bishop: 'Bishop',
   sons_of_prophet: 'Sons of Prophet',
-  pastor_deji: 'Pastor Deji',
+  pastor_deji: 'Outreach',
 };
 
 function fmtDateTime(iso: string): string {
@@ -176,6 +205,9 @@ export default function SalesClient({ user }: { user: SessionUser }) {
 
   const [from, setFrom] = useState(() => presetRange('month').from);
   const [to, setTo] = useState(() => presetRange('month').to);
+  const [fromTime, setFromTime] = useState('');
+  const [toTime, setToTime] = useState('');
+  const [source, setSource] = useState<'pos' | 'warehouse'>('pos');
   const [activePreset, setActivePreset] = useState<PresetId>('month');
   const [paymentMethod, setPaymentMethod] = useState('');
   const [status, setStatus] = useState('');
@@ -184,6 +216,8 @@ export default function SalesClient({ user }: { user: SessionUser }) {
 
   const applyPreset = useCallback((id: PresetId) => {
     setActivePreset(id);
+    setFromTime('');
+    setToTime('');
     if (id === 'custom') return;
     const r = presetRange(id);
     setFrom(r.from);
@@ -206,6 +240,16 @@ export default function SalesClient({ user }: { user: SessionUser }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /* Warehouse deliveries view */
+  const [deliveries, setDeliveries] = useState<DeliveryLite[]>([]);
+  const [deliveriesLoading, setDeliveriesLoading] = useState(false);
+
+  /* Daily sales print (admin/manager only) */
+  const canDailyPrint = user.role === 'admin' || user.role === 'manager';
+  const [dailyDate, setDailyDate] = useState(todayISO());
+  const [dailyData, setDailyData] = useState<DailySales | null>(null);
+  const [dailyBusy, setDailyBusy] = useState(false);
+
   /* Receipt detail */
   const [detailOpen, setDetailOpen] = useState(false);
   const [detail, setDetail] = useState<Receipt | null>(null);
@@ -218,10 +262,14 @@ export default function SalesClient({ user }: { user: SessionUser }) {
   const buildUrl = useCallback(
     (after?: string | null) => {
       const params = new URLSearchParams({ limit: '40' });
-      if (from) params.set('from', new Date(from).toISOString());
+      if (from) {
+        const start = fromTime ? new Date(`${from}T${fromTime}:00`) : new Date(from);
+        params.set('from', start.toISOString());
+      }
       if (to) {
-        const end = new Date(to);
-        end.setHours(23, 59, 59, 999);
+        const end = toTime ? new Date(`${to}T${toTime}:00`) : new Date(to);
+        if (toTime) end.setSeconds(59, 999);
+        else end.setHours(23, 59, 59, 999);
         params.set('to', end.toISOString());
       }
       if (paymentMethod) params.set('paymentMethod', paymentMethod);
@@ -229,7 +277,7 @@ export default function SalesClient({ user }: { user: SessionUser }) {
       if (after) params.set('cursor', after);
       return `/api/v1/sales?${params}`;
     },
-    [from, to, paymentMethod, status]
+    [from, to, fromTime, toTime, paymentMethod, status]
   );
 
   const fetchSales = useCallback(
@@ -270,6 +318,45 @@ export default function SalesClient({ user }: { user: SessionUser }) {
     setPaymentMethod('');
     setStatus('');
     setReceiptSearch('');
+  };
+
+  /* ── Warehouse deliveries (source = warehouse) ── */
+  const fetchDeliveries = useCallback(async () => {
+    setDeliveriesLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: '100' });
+      if (from) params.set('from', new Date(from).toISOString());
+      if (to) {
+        const end = new Date(to);
+        end.setHours(23, 59, 59, 999);
+        params.set('to', end.toISOString());
+      }
+      const data = await api<{ items: DeliveryLite[] }>(`/api/v1/deliveries?${params}`);
+      setDeliveries(data.items);
+    } catch {
+      setDeliveries([]);
+    } finally {
+      setDeliveriesLoading(false);
+    }
+  }, [from, to]);
+
+  useEffect(() => {
+    if (source === 'warehouse') fetchDeliveries();
+  }, [source, fetchDeliveries]);
+
+  /* ── Daily sales print ── */
+  const printDaily = async () => {
+    setDailyBusy(true);
+    try {
+      const data = await api<DailySales>(`/api/v1/reports/daily-sales?date=${dailyDate}`);
+      setDailyData(data);
+      setDetail(null);
+      setTimeout(() => window.print(), 400);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load the daily summary.');
+    } finally {
+      setDailyBusy(false);
+    }
   };
 
   /* ── Receipt detail ── */
@@ -319,6 +406,7 @@ export default function SalesClient({ user }: { user: SessionUser }) {
         @media print {
           .receipt-no-print { display: none !important; }
           .receipt-print-only { display: block !important; }
+          .daily-print-only { display: block !important; }
           body { background: #fff !important; }
           [data-sonner-toaster] { display: none !important; }
         }
@@ -393,6 +481,30 @@ export default function SalesClient({ user }: { user: SessionUser }) {
             </Field>
           </div>
         </div>
+        {/* Time-of-day filter */}
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:max-w-md">
+          <Field label="From time" htmlFor="f-from-time">
+            <input
+              id="f-from-time"
+              type="time"
+              value={fromTime}
+              onChange={(e) => { setFromTime(e.target.value); setActivePreset('custom'); }}
+              className={inputClass}
+            />
+          </Field>
+          <Field label="To time" htmlFor="f-to-time">
+            <input
+              id="f-to-time"
+              type="time"
+              value={toTime}
+              onChange={(e) => { setToTime(e.target.value); setActivePreset('custom'); }}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <p className="mt-1.5 text-xs text-[var(--ink-muted)]">
+          Optional — narrow the list to a time of day (e.g. morning sales only).
+        </p>
         {/* Date-range preset chips */}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold tracking-wide text-[var(--ink-muted)] uppercase">
@@ -450,10 +562,114 @@ export default function SalesClient({ user }: { user: SessionUser }) {
             <Icon name="restart_alt" size={18} /> Clear
           </button>
         </div>
+        {/* Source: POS sales vs warehouse delivery orders */}
+        {!ownScope && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold tracking-wide text-[var(--ink-muted)] uppercase">
+              Source
+            </span>
+            {(
+              [
+                { value: 'pos', label: 'Shop (POS)' },
+                { value: 'warehouse', label: 'Warehouse deliveries' },
+              ] as const
+            ).map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setSource(s.value)}
+                aria-pressed={source === s.value}
+                className={`inline-flex min-h-[44px] items-center rounded-full px-4 text-sm font-semibold transition ${
+                  source === s.value
+                    ? 'bg-[var(--wine)] text-white'
+                    : 'bg-[var(--surface-alt)] text-[var(--ink-muted)] hover:bg-[var(--wine-tint)] hover:text-[var(--wine)]'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
       </motion.div>
 
+      {/* Daily sales print — admin/manager only */}
+      {canDailyPrint && source === 'pos' && (
+        <motion.div
+          variants={riseVariants}
+          className="paper-texture mb-5 flex flex-col gap-3 rounded-2xl border border-[var(--border)] p-4 shadow-[var(--shadow)] sm:flex-row sm:items-end"
+        >
+          <div className="flex-1">
+            <h2 className="font-display text-base text-[var(--ink)]">Daily sales print</h2>
+            <p className="text-sm text-[var(--ink-muted)]">
+              Printable summary of one day — Bishop Books first, then everything else, with
+              Cash and MoMo totals.
+            </p>
+          </div>
+          <div className="flex items-end gap-2">
+            <Field label="Date" htmlFor="ds-date">
+              <input
+                id="ds-date"
+                type="date"
+                max={todayISO()}
+                value={dailyDate}
+                onChange={(e) => setDailyDate(e.target.value)}
+                className={inputClass}
+              />
+            </Field>
+            <PrimaryButton onClick={printDaily} disabled={dailyBusy || !dailyDate}>
+              <Icon name="print" size={20} /> {dailyBusy ? 'Loading…' : 'Print summary'}
+            </PrimaryButton>
+          </div>
+        </motion.div>
+      )}
+
       {/* List */}
-      {loading ? (
+      {source === 'warehouse' ? (
+        deliveriesLoading ? (
+          <SkeletonRows rows={6} />
+        ) : deliveries.length === 0 ? (
+          <EmptyState
+            icon="local_shipping"
+            title="No warehouse deliveries in this range"
+            body="Delivery orders are warehouse sales. Create them from the Deliveries page."
+            action={
+              <SecondaryButton onClick={() => { window.location.href = '/deliveries'; }}>
+                <Icon name="local_shipping" size={20} /> Open Deliveries
+              </SecondaryButton>
+            }
+          />
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {deliveries.map((d) => (
+              <a
+                key={d.id}
+                href="/deliveries"
+                className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow)] transition hover:-translate-y-0.5 hover:shadow-lg"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-[var(--ink)]">{d.customerName}</p>
+                    <p className="truncate text-xs text-[var(--ink-muted)]">
+                      {d.invoiceNumber} · {fmtDateTime(d.createdAt)}
+                    </p>
+                  </div>
+                  {d.status === 'delivered' ? (
+                    <Badge tone="green">Delivered</Badge>
+                  ) : (
+                    <Badge tone="gold">Pending</Badge>
+                  )}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
+                  <span className="text-xs font-semibold text-[var(--ink-muted)]">
+                    Warehouse · {d.itemCount} line{d.itemCount === 1 ? '' : 's'}
+                  </span>
+                  <span className="tnum text-lg font-bold text-[var(--ink)]">{formatMoney(d.total)}</span>
+                </div>
+              </a>
+            ))}
+          </div>
+        )
+      ) : loading ? (
         <SkeletonRows rows={8} />
       ) : error ? (
         <ErrorState message={error} onRetry={() => fetchSales()} />
@@ -668,6 +884,16 @@ export default function SalesClient({ user }: { user: SessionUser }) {
           <SalesReceiptPrint receipt={detail} />
         </div>
       )}
+
+      {/* Print-only daily sales summary */}
+      {dailyData && (
+        <>
+          <style>{`@page { size: A4; margin: 12mm; }`}</style>
+          <div className="daily-print-only hidden bg-white text-black p-6" aria-hidden="true">
+            <DailySalesPrint data={dailyData} />
+          </div>
+        </>
+      )}
     </motion.div>
   );
 }
@@ -732,6 +958,112 @@ function SalesReceiptPrint({ receipt }: { receipt: Receipt }) {
       </dl>
       <div className="border-t border-dashed border-black/40 my-2" />
       <p className="text-center italic">Thank you and God bless you.</p>
+    </div>
+  );
+}
+
+/* ═══════════════════════ Print-only daily sales summary ═══════════════════════ */
+
+function DailySalesPrint({ data }: { data: DailySales }) {
+  const section = (
+    title: string,
+    group: { items: DailySalesItem[]; subtotal: number }
+  ) => (
+    <div style={{ marginTop: 18 }}>
+      <p style={{ fontSize: 14, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1 }}>
+        {title}
+      </p>
+      {group.items.length === 0 ? (
+        <p style={{ fontSize: 12, fontStyle: 'italic', marginTop: 6 }}>None sold this day.</p>
+      ) : (
+        <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse', marginTop: 6 }}>
+          <thead>
+            <tr style={{ borderTop: '2px solid #000', borderBottom: '1px solid #000' }}>
+              <th style={{ textAlign: 'left', padding: '5px 4px' }}>Item</th>
+              <th style={{ textAlign: 'right', padding: '5px 4px' }}>Qty</th>
+              <th style={{ textAlign: 'right', padding: '5px 4px' }}>Unit price</th>
+              <th style={{ textAlign: 'right', padding: '5px 4px' }}>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.items.map((i, idx) => (
+              <tr key={idx} style={{ borderBottom: '1px solid #ddd' }}>
+                <td style={{ padding: '5px 4px' }}>{i.name}</td>
+                <td style={{ textAlign: 'right', padding: '5px 4px' }}>{i.quantity}</td>
+                <td style={{ textAlign: 'right', padding: '5px 4px' }}>{formatMoney(i.unitPrice)}</td>
+                <td style={{ textAlign: 'right', padding: '5px 4px', fontWeight: 600 }}>
+                  {formatMoney(i.lineTotal)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: '1.5px solid #000' }}>
+              <td colSpan={3} style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 700 }}>
+                Subtotal — {title}
+              </td>
+              <td style={{ textAlign: 'right', padding: '6px 4px', fontWeight: 800 }}>
+                {formatMoney(group.subtotal)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 720, margin: '0 auto', color: '#000' }}>
+      <div style={{ textAlign: 'center' }}>
+        <p style={{ fontSize: 20, fontWeight: 800 }}>{data.shopName}</p>
+        <p style={{ fontSize: 13, letterSpacing: 2, textTransform: 'uppercase', marginTop: 2 }}>
+          Daily Sales Summary
+        </p>
+        <p style={{ fontSize: 12.5, marginTop: 4 }}>
+          {new Date(data.date + 'T12:00:00').toLocaleDateString('en-GH', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+          })}{' '}
+          · {data.transactions} transaction{data.transactions === 1 ? '' : 's'}
+        </p>
+      </div>
+
+      {section('Bishop Books', data.bishop)}
+      {section('Other Items', data.other)}
+
+      <div
+        style={{
+          marginTop: 22,
+          borderTop: '2.5px solid #000',
+          paddingTop: 10,
+          fontSize: 13.5,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+          <span>Total MoMo</span>
+          <strong>{formatMoney(data.momoTotal)}</strong>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+          <span>Total Cash</span>
+          <strong>{formatMoney(data.cashTotal)}</strong>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            padding: '8px 0 0',
+            marginTop: 6,
+            borderTop: '1px dashed #000',
+            fontSize: 16,
+            fontWeight: 800,
+          }}
+        >
+          <span>GRAND TOTAL</span>
+          <span>{formatMoney(data.grandTotal)}</span>
+        </div>
+      </div>
     </div>
   );
 }
